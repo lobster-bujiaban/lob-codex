@@ -46,17 +46,6 @@
     .brand-copy strong { display: block; font-size: 18px; letter-spacing: -.02em; }
     .brand-copy span { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
 
-    .project-card {
-      padding: 16px; border: 1px solid #f0d9ca; border-radius: 16px;
-      background: linear-gradient(145deg, #fff9f1, #fff3e8);
-    }
-    .eyebrow { margin: 0 0 7px; color: var(--orange-dark); font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-    .project-card h2 { margin: 0; font-size: 16px; }
-    .project-card p { margin: 7px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
-    .progress { display: flex; gap: 5px; margin-top: 14px; }
-    .progress span { flex: 1; height: 4px; border-radius: 4px; background: #eadfd4; }
-    .progress .done { background: var(--orange); }
-
     .section-label { margin: 24px 7px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; }
     .concept-list { display: grid; gap: 5px; }
     .concept {
@@ -72,10 +61,10 @@
       font: 700 10px/1 var(--font);
     }
     .concept.active .concept-index { border-color: var(--orange); background: var(--orange); color: #fff; }
-    .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+    .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
     .thread-header .section-label { margin: 0; }
     .new-thread { border: 0; background: transparent; color: var(--orange-dark); font-size: 11px; cursor: pointer; }
-    .thread-list { display: grid; gap: 5px; margin-top: 8px; max-height: 150px; overflow-y: auto; }
+    .thread-list { display: grid; gap: 5px; margin-top: 8px; max-height: 180px; overflow-y: auto; }
     .thread-item { padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
     .thread-item:hover, .thread-item.active { border-color: var(--line); background: #f0ebe3; color: var(--ink); }
     .thread-item strong, .thread-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -227,12 +216,8 @@
         <div class="brand-copy"><strong>LOB Codex</strong><span>用 Go 读懂 Codex Harness</span></div>
       </button>
 
-      <section class="project-card">
-        <p class="eyebrow">Open Source Lab</p>
-        <h2>源码等价实现计划</h2>
-        <p>沿 Codex 真实调用链逐层复现，不重新设计另一套 Harness。</p>
-        <div class="progress" aria-label="当前实现进度"><span class="done"></span><span class="done"></span><span></span><span></span><span></span></div>
-      </section>
+      <div class="thread-header"><p class="section-label">对话工作区</p><button id="new-thread" class="new-thread" type="button">＋ 新建</button></div>
+      <div id="thread-list" class="thread-list"></div>
 
       <p class="section-label">当前学习主链</p>
       <nav class="concept-list">
@@ -242,9 +227,6 @@
         <button class="concept" type="button" data-topic="Approval & Sandbox"><span class="concept-index">04</span><span>Approval & Sandbox</span></button>
         <button class="concept" type="button" data-topic="MCP & Plugins"><span class="concept-index">05</span><span>MCP & Plugins</span></button>
       </nav>
-
-      <div class="thread-header"><p class="section-label">对话工作区</p><button id="new-thread" class="new-thread" type="button">＋ 新建</button></div>
-      <div id="thread-list" class="thread-list"></div>
 
       <div class="sidebar-bottom">
         <p class="social-title">关注「虾哥不加班」</p>
