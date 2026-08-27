@@ -31,7 +31,7 @@ func (history *ConversationHistory) RecordItems(items ...protocol.ResponseItem) 
 	defer history.mu.Unlock()
 	for _, item := range items {
 		switch item.Type {
-		case "message", "function_call", "function_call_output":
+		case "message", "reasoning", "function_call", "function_call_output":
 			history.items = append(history.items, item)
 		}
 	}
@@ -89,7 +89,7 @@ func (history *ConversationHistory) Restore(items []protocol.ResponseItem) {
 	history.items = history.items[:0]
 	for _, item := range items {
 		switch item.Type {
-		case "message", "function_call", "function_call_output":
+		case "message", "reasoning", "function_call", "function_call_output":
 			history.items = append(history.items, item)
 		}
 	}

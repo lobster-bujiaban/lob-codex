@@ -4,14 +4,16 @@ package protocol
 // and the Responses API. This stage implements Codex's message subset; later
 // stages add reasoning and tool-call variants without changing history ownership.
 type ResponseItem struct {
-	Type      string        `json:"type"`
-	ID        string        `json:"id,omitempty"`
-	Role      string        `json:"role,omitempty"`
-	Content   []ContentItem `json:"content,omitempty"`
-	CallID    string        `json:"call_id,omitempty"`
-	Name      string        `json:"name,omitempty"`
-	Arguments string        `json:"arguments,omitempty"`
-	Output    string        `json:"output,omitempty"`
+	Type             string        `json:"type"`
+	ID               string        `json:"id,omitempty"`
+	Role             string        `json:"role,omitempty"`
+	Content          []ContentItem `json:"content,omitempty"`
+	CallID           string        `json:"call_id,omitempty"`
+	Name             string        `json:"name,omitempty"`
+	Arguments        string        `json:"arguments,omitempty"`
+	Output           string        `json:"output,omitempty"`
+	Summary          []ContentItem `json:"summary,omitempty"`
+	EncryptedContent string        `json:"encrypted_content,omitempty"`
 }
 
 // NewFunctionCallOutput creates the model-visible result paired with one call.
@@ -58,6 +60,10 @@ func NewAssistantMessage(text string) ResponseItem {
 			Text: text,
 		}},
 	}
+}
+
+func NewDeveloperMessage(text string) ResponseItem {
+	return ResponseItem{Type: "message", Role: "developer", Content: []ContentItem{{Type: "input_text", Text: text}}}
 }
 
 // Text returns the concatenated text content carried by an item.

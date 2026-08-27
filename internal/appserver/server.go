@@ -93,6 +93,8 @@ func NewHandler(client model.Client) *Handler {
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/fork", handler.forkThread)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/interrupt", handler.interruptTurn)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/steer", handler.steerTurn)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/extensions/refresh", handler.refreshExtensions)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/background-terminals/clean", handler.cleanBackgroundTerminals)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/history", handler.threadHistory)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/flow", handler.threadFlow)
 	handler.mux.HandleFunc("POST /api/workspaces/select", handler.selectWorkspace)
@@ -104,6 +106,42 @@ func NewHandler(client model.Client) *Handler {
 	}
 	handler.mux.Handle("GET /", http.FileServer(http.FS(staticFiles)))
 	return handler
+}
+
+func (h *Handler) refreshExtensions(writer http.ResponseWriter, request *http.Request) {
+	runtime, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	if err := sessionIO.RefreshExtensions(request.Context()); err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) cleanBackgroundTerminals(writer http.ResponseWriter, request *http.Request) {
+	runtime, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	if err := sessionIO.CleanBackgroundTerminals(request.Context()); err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) interruptTurn(writer http.ResponseWriter, request *http.Request) {

@@ -3,6 +3,7 @@ package session
 import (
 	"time"
 
+	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/tools"
 )
 
@@ -10,10 +11,12 @@ import (
 type OpType string
 
 const (
-	OpTurnInput    OpType = "turn_input"
-	OpExecApproval OpType = "exec_approval"
-	OpInterrupt    OpType = "interrupt"
-	OpShutdown     OpType = "shutdown"
+	OpTurnInput                OpType = "turn_input"
+	OpExecApproval             OpType = "exec_approval"
+	OpInterrupt                OpType = "interrupt"
+	OpRefreshExtensions        OpType = "refresh_extensions"
+	OpCleanBackgroundTerminals OpType = "clean_background_terminals"
+	OpShutdown                 OpType = "shutdown"
 )
 
 // Op is the subset of Codex session operations implemented by the current port.
@@ -23,6 +26,7 @@ type Op struct {
 	ExpectedTurnID string
 	AdmissionReply chan TurnInputAdmission
 	Approval       *ExecApprovalResponse
+	ResultReply    chan error
 }
 
 // TurnInputAdmission reports whether input started a turn or steered the active one.
@@ -67,10 +71,14 @@ type samplingRequestResult struct {
 	NeedsFollowUp    bool
 	LastAgentMessage *string
 	TimeToFirstToken *int64
+	Usage            model.TokenUsage
+	ResponseID       string
 }
 
 type taskResult struct {
 	LastAgentMessage *string
 	TimeToFirstToken *int64
 	Err              error
+	Usage            model.TokenUsage
+	ResponseID       string
 }

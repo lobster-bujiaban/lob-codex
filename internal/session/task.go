@@ -77,6 +77,12 @@ func (s *Session) onTaskFinished(
 			CompletedAt:        completedAt.Unix(),
 			DurationMS:         duration,
 			TimeToFirstTokenMS: result.TimeToFirstToken,
+			ResponseID:         result.ResponseID,
+			Usage: &protocol.TokenUsage{
+				InputTokens: result.Usage.InputTokens, CachedInputTokens: result.Usage.CachedInputTokens,
+				CacheWriteInputTokens: result.Usage.CacheWriteInputTokens, OutputTokens: result.Usage.OutputTokens,
+				ReasoningOutputTokens: result.Usage.ReasoningOutputTokens, TotalTokens: result.Usage.TotalTokens,
+			},
 		},
 	})
 }

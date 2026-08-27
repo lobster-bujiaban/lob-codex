@@ -4,6 +4,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -116,6 +117,8 @@ func (router *Router) Close() {
 	router.processes.Close()
 }
 
+func (router *Router) CleanBackgroundProcesses() { router.processes.Close() }
+
 // Register adds a tool while rejecting duplicate names.
 func (router *Router) Register(executor Executor) error {
 	definition := executor.Definition()
@@ -127,6 +130,20 @@ func (router *Router) Register(executor Executor) error {
 	router.registry[definition.Name] = executor
 	router.order = append(router.order, definition.Name)
 	return nil
+}
+
+func (router *Router) UnregisterPrefix(prefix string) {
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	order := router.order[:0]
+	for _, name := range router.order {
+		if strings.HasPrefix(name, prefix) {
+			delete(router.registry, name)
+			continue
+		}
+		order = append(order, name)
+	}
+	router.order = order
 }
 
 // ModelVisibleDefinitions returns the stable tool list captured by a Step.

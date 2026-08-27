@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 )
@@ -39,6 +37,7 @@ func (ExecCommandExecutor) Definition() Definition {
 				"max_output_tokens": map[string]any{"type": "number", "description": "Approximate output token budget."},
 				"tty":               map[string]any{"type": "boolean", "description": "Allocate a pseudo-terminal for interactive programs."},
 				"prefix_rule":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Requested argv prefix for a reusable approval."},
+				"network_access":    map[string]any{"type": "boolean", "description": "Request network access; requires approval unless already covered by an approved rule."},
 			},
 			"required":             []string{"cmd"},
 			"additionalProperties": false,
@@ -56,6 +55,7 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		MaxOutputTokens int      `json:"max_output_tokens"`
 		TTY             bool     `json:"tty"`
 		PrefixRule      []string `json:"prefix_rule"`
+		NetworkAccess   bool     `json:"network_access"`
 	}
 	if err := json.Unmarshal([]byte(invocation.Call.Arguments), &arguments); err != nil {
 		return "", errors.New("arguments must be valid exec_command JSON")
@@ -69,6 +69,11 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		return "", err
 	}
 	approved := requirement.MatchedRule != "" && !strings.HasPrefix(requirement.MatchedRule, "built-in read-only:")
+	if arguments.NetworkAccess {
+		requirement.NeedsApproval = true
+		requirement.Reason = "command requests network access"
+		requirement.ProposedRule = nil
+	}
 	policyRule := requirement.MatchedRule
 	if requirement.NeedsApproval {
 		if invocation.Reviewer == nil {
@@ -113,12 +118,16 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		outputLimit = min(arguments.MaxOutputTokens*4, maxOutputBytes)
 	}
 
-	command, err := sandboxedCommand(ctx, invocation.Environment.WorkspaceRoot, workingDirectory, arguments.Command, approved)
+	backend := localSandboxBackend()
+	command, err := backend.Command(ctx, SandboxPolicy{
+		WorkspaceRoot: invocation.Environment.WorkspaceRoot, WorkingDirectory: workingDirectory,
+		WorkspaceWrite: approved, NetworkAccess: arguments.NetworkAccess && approved,
+	}, arguments.Command)
 	if err != nil {
 		return "", err
 	}
 	return executor.Manager.start(
-		command, invocation.Call.CallID, arguments.TTY, yield, outputLimit, policyRule, invocation.Emit,
+		command, invocation.Call.CallID, arguments.TTY, yield, outputLimit, policyRule+" · "+backend.Name(), invocation.Emit,
 	)
 }
 
@@ -139,28 +148,6 @@ func resolveWorkingDirectory(environment Environment, requested string) (string,
 		return "", errors.New("workdir escapes the workspace root")
 	}
 	return workingDirectory, nil
-}
-
-func sandboxedCommand(ctx context.Context, workspaceRoot, workingDirectory, command string, approved bool) (*exec.Cmd, error) {
-	if runtime.GOOS != "darwin" {
-		return nil, errors.New("read-only exec sandbox is currently implemented for macOS only")
-	}
-	writeRule := ""
-	if approved {
-		writeRule = fmt.Sprintf("\n(allow file-write* (subpath %q))", workspaceRoot)
-	}
-	profile := fmt.Sprintf(`(version 1)
-(deny default)
-(import "system.sb")
-(allow process-exec)
-(allow process-fork)
-(allow signal (target self))
-(allow sysctl-read)
-(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/Library") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/Applications/ChatGPT.app/Contents/Resources") (subpath "/Applications/Codex.app/Contents/Resources") (subpath %q))%s`, workspaceRoot, writeRule)
-	cmd := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", "-p", profile, "/bin/zsh", "-c", command)
-	cmd.Dir = workingDirectory
-	cmd.Env = append(os.Environ(), "PATH="+execSearchPath())
-	return cmd, nil
 }
 
 func execSearchPath() string {

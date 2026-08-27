@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
+	"github.com/lobster-bujiaban/lob-codex/internal/tools"
 )
 
 const compactPrompt = `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
@@ -33,8 +35,10 @@ func (s *Session) runRegularTask(
 func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input []TurnInput) taskResult {
 	var lastAgentMessage *string
 	var timeToFirstToken *int64
+	var turnUsage model.TokenUsage
+	var responseID string
 	for _, item := range input {
-		s.recordConversationItems(protocol.NewUserMessageWithImages(item.Text, item.ImageURLs))
+		s.recordTurnInput(item)
 	}
 
 	for {
@@ -51,6 +55,10 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken, Err: err}
 		}
 		lastAgentMessage = result.LastAgentMessage
+		turnUsage.Add(&result.Usage)
+		if result.ResponseID != "" {
+			responseID = result.ResponseID
+		}
 		if result.TimeToFirstToken != nil {
 			timeToFirstToken = result.TimeToFirstToken
 		}
@@ -59,13 +67,20 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 		s.activeMu.Unlock()
 		if active != nil && active.turnID == turnContext.SubID {
 			for _, item := range active.takePendingInput(result.NeedsFollowUp) {
-				s.recordConversationItems(protocol.NewUserMessageWithImages(item.Text, item.ImageURLs))
+				s.recordTurnInput(item)
 				result.NeedsFollowUp = true
 			}
 		}
 		if !result.NeedsFollowUp {
-			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken}
+			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken, Usage: turnUsage, ResponseID: responseID}
 		}
+	}
+}
+
+func (s *Session) recordTurnInput(input TurnInput) {
+	s.recordConversationItems(protocol.NewUserMessageWithImages(input.Text, input.ImageURLs))
+	if instructions := s.extensions.Instructions(input.Text); instructions != "" && instructions != input.Text {
+		s.recordConversationItems(protocol.NewDeveloperMessage(instructions))
 	}
 }
 
@@ -153,10 +168,12 @@ func (s *Session) runSamplingRequest(
 	errorsChannel := stream.Errors
 	var output strings.Builder
 	var timeToFirstToken *int64
-	var completedItem *protocol.ResponseItem
-	recordedOutputItem := false
+	var lastAssistantItem *protocol.ResponseItem
+	var pendingCalls []tools.Call
 	needsFollowUp := false
 	completed := false
+	var usage model.TokenUsage
+	var responseID string
 
 	for events != nil || errorsChannel != nil {
 		select {
@@ -181,9 +198,11 @@ func (s *Session) runSamplingRequest(
 			case model.ResponseOutputItemDone:
 				if event.Item != nil {
 					item := *event.Item
-					completedItem = &item
 					s.recordConversationItems(item)
-					recordedOutputItem = true
+					if item.Role == "assistant" {
+						copy := item
+						lastAssistantItem = &copy
+					}
 					call, err := stepContext.ToolRouter.BuildToolCall(item)
 					if err != nil {
 						callID := item.CallID
@@ -195,16 +214,13 @@ func (s *Session) runSamplingRequest(
 						needsFollowUp = true
 					} else if call != nil {
 						s.sendEvent(stepContext.Turn, protocol.NewToolCallStarted(call.CallID, call.Name, call.Arguments))
-						toolOutput := stepContext.ToolRouter.Execute(ctx, *call, func(message protocol.EventMsg) {
-							s.sendEvent(stepContext.Turn, message)
-						})
-						s.recordConversationItems(toolOutput)
-						s.sendEvent(stepContext.Turn, protocol.NewToolCallCompleted(call.CallID, call.Name, toolOutput.Output))
-						needsFollowUp = true
+						pendingCalls = append(pendingCalls, *call)
 					}
 				}
 			case model.ResponseCompleted:
 				completed = true
+				usage.Add(event.Usage)
+				responseID = event.ResponseID
 			}
 		case err, ok := <-errorsChannel:
 			if !ok {
@@ -220,20 +236,44 @@ func (s *Session) runSamplingRequest(
 	if !completed {
 		return samplingRequestResult{}, errors.New("model stream closed before response.completed")
 	}
+	if len(pendingCalls) > 0 {
+		outputs := make([]protocol.ResponseItem, len(pendingCalls))
+		var wait sync.WaitGroup
+		for index := range pendingCalls {
+			wait.Add(1)
+			go func(index int) {
+				defer wait.Done()
+				outputs[index] = stepContext.ToolRouter.Execute(ctx, pendingCalls[index], func(message protocol.EventMsg) {
+					s.sendEvent(stepContext.Turn, message)
+				})
+			}(index)
+		}
+		wait.Wait()
+		for index, toolOutput := range outputs {
+			s.recordConversationItems(toolOutput)
+			call := pendingCalls[index]
+			s.sendEvent(stepContext.Turn, protocol.NewToolCallCompleted(call.CallID, call.Name, toolOutput.Output))
+		}
+		needsFollowUp = true
+	}
 	message := output.String()
-	if completedItem == nil {
+	if lastAssistantItem == nil && message != "" {
 		item := protocol.NewAssistantMessage(message)
-		completedItem = &item
+		lastAssistantItem = &item
+		s.recordConversationItems(item)
 	}
-	if !recordedOutputItem {
-		s.recordConversationItems(*completedItem)
+	if lastAssistantItem != nil && lastAssistantItem.Text() != "" {
+		message = lastAssistantItem.Text()
 	}
-	if completedItem.Role == "assistant" && completedItem.Text() != "" {
-		message = completedItem.Text()
+	var lastMessage *string
+	if message != "" {
+		lastMessage = &message
 	}
 	return samplingRequestResult{
 		NeedsFollowUp:    needsFollowUp,
-		LastAgentMessage: &message,
+		LastAgentMessage: lastMessage,
 		TimeToFirstToken: timeToFirstToken,
+		Usage:            usage,
+		ResponseID:       responseID,
 	}, nil
 }

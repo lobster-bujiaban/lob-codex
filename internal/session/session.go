@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lobster-bujiaban/lob-codex/internal/extensions"
+	"github.com/lobster-bujiaban/lob-codex/internal/mcp"
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 	"github.com/lobster-bujiaban/lob-codex/internal/tools"
@@ -28,6 +30,8 @@ type Session struct {
 	rollout       *rolloutRecorder
 	tools         *tools.Router
 	workspaceRoot string
+	extensions    extensions.Catalog
+	mcpClients    []*mcp.Client
 
 	approvalMu sync.Mutex
 	approvals  map[string]pendingApproval
@@ -105,6 +109,35 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
 		workspaceRoot: workspaceRoot,
 	}
+	catalog, err := extensions.Load(workspaceRoot)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("load extensions: %w", err)
+	}
+	sess.extensions = catalog
+	for _, config := range catalog.MCPServers {
+		client, startErr := mcp.Start(ctx, config, workspaceRoot)
+		if startErr != nil {
+			continue
+		}
+		listed, listErr := client.ListTools(ctx)
+		if listErr != nil {
+			client.Close()
+			continue
+		}
+		registered := true
+		for _, remoteTool := range listed {
+			if err := sess.tools.Register(mcp.Executor{Client: client, Server: config.Name, Tool: remoteTool}); err != nil {
+				registered = false
+				break
+			}
+		}
+		if registered {
+			sess.mcpClients = append(sess.mcpClients, client)
+		} else {
+			client.Close()
+		}
+	}
 	if rolloutPath != "" {
 		recorder, initialHistory, err := openRollout(rolloutPath)
 		if err != nil {
@@ -180,6 +213,32 @@ func (io *IO) Interrupt(ctx context.Context) error {
 	return err
 }
 
+func (io *IO) RefreshExtensions(ctx context.Context) error {
+	reply := make(chan error, 1)
+	if _, err := io.Submit(ctx, Op{Type: OpRefreshExtensions, ResultReply: reply}); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-reply:
+		return err
+	}
+}
+
+func (io *IO) CleanBackgroundTerminals(ctx context.Context) error {
+	reply := make(chan error, 1)
+	if _, err := io.Submit(ctx, Op{Type: OpCleanBackgroundTerminals, ResultReply: reply}); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-reply:
+		return err
+	}
+}
+
 // NextEvent waits for the next public session event.
 func (io *IO) NextEvent(ctx context.Context) (protocol.Event, error) {
 	select {
@@ -215,6 +274,11 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 	defer close(s.events)
 	defer s.cancel()
 	defer s.tools.Close()
+	defer func() {
+		for _, client := range s.mcpClients {
+			client.Close()
+		}
+	}()
 	defer s.rollout.close()
 
 	for submission := range submissions {
@@ -225,6 +289,16 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 			s.handleExecApproval(submission)
 		case OpInterrupt:
 			s.abortActive("interrupted")
+		case OpRefreshExtensions:
+			err := s.refreshExtensions()
+			if submission.Op.ResultReply != nil {
+				submission.Op.ResultReply <- err
+			}
+		case OpCleanBackgroundTerminals:
+			s.tools.CleanBackgroundProcesses()
+			if submission.Op.ResultReply != nil {
+				submission.Op.ResultReply <- nil
+			}
 		case OpShutdown:
 			s.abortActive("shutdown")
 			return
@@ -236,6 +310,44 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 		}
 	}
 	s.abortActive("session channel closed")
+}
+
+func (s *Session) refreshExtensions() error {
+	s.activeMu.Lock()
+	active := s.active
+	s.activeMu.Unlock()
+	if active != nil {
+		return errors.New("cannot refresh extensions while a turn is active")
+	}
+	catalog, err := extensions.Load(s.workspaceRoot)
+	if err != nil {
+		return err
+	}
+	for _, client := range s.mcpClients {
+		client.Close()
+	}
+	s.mcpClients = nil
+	s.tools.UnregisterPrefix("mcp__")
+	for _, config := range catalog.MCPServers {
+		client, err := mcp.Start(s.ctx, config, s.workspaceRoot)
+		if err != nil {
+			continue
+		}
+		listed, err := client.ListTools(s.ctx)
+		if err != nil {
+			client.Close()
+			continue
+		}
+		for _, remoteTool := range listed {
+			if err := s.tools.Register(mcp.Executor{Client: client, Server: config.Name, Tool: remoteTool}); err != nil {
+				client.Close()
+				return err
+			}
+		}
+		s.mcpClients = append(s.mcpClients, client)
+	}
+	s.extensions = catalog
+	return nil
 }
 
 func (s *Session) recordConversationItems(items ...protocol.ResponseItem) {

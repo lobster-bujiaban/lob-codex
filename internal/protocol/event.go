@@ -90,6 +90,17 @@ type TurnCompleteEvent struct {
 	CompletedAt        int64       `json:"completed_at"`
 	DurationMS         int64       `json:"duration_ms"`
 	TimeToFirstTokenMS *int64      `json:"time_to_first_token_ms,omitempty"`
+	Usage              *TokenUsage `json:"usage,omitempty"`
+	ResponseID         string      `json:"response_id,omitempty"`
+}
+
+type TokenUsage struct {
+	InputTokens           int64 `json:"input_tokens"`
+	CachedInputTokens     int64 `json:"cached_input_tokens"`
+	CacheWriteInputTokens int64 `json:"cache_write_input_tokens"`
+	OutputTokens          int64 `json:"output_tokens"`
+	ReasoningOutputTokens int64 `json:"reasoning_output_tokens"`
+	TotalTokens           int64 `json:"total_tokens"`
 }
 
 // TurnAbortedEvent mirrors Codex's interrupted terminal turn event.

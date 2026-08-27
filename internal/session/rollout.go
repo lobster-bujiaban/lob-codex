@@ -72,6 +72,7 @@ type FlowSummary struct {
 	InputTokens  int   `json:"input_tokens"`
 	OutputTokens int   `json:"output_tokens"`
 	DurationMS   int64 `json:"duration_ms"`
+	UsageExact   bool  `json:"usage_exact"`
 }
 
 func openRollout(path string) (*rolloutRecorder, []protocol.ResponseItem, error) {
@@ -164,12 +165,26 @@ func ReadRolloutFlow(path string) ([]FlowEvent, FlowSummary, error) {
 	var summary FlowSummary
 	var firstTime, lastTime time.Time
 	turn, step := 0, 0
+	exactUsage := false
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64<<10), 4<<20)
 	for scanner.Scan() {
 		var line rolloutLine
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 			return nil, FlowSummary{}, fmt.Errorf("decode rollout flow: %w", err)
+		}
+		if line.Type == "event_msg" && len(line.Payload) != 0 {
+			var message protocol.EventMsg
+			if json.Unmarshal(line.Payload, &message) == nil && message.TurnComplete != nil {
+				summary.DurationMS += message.TurnComplete.DurationMS
+				if usage := message.TurnComplete.Usage; usage != nil && usage.TotalTokens > 0 {
+					if !exactUsage {
+						summary.InputTokens, summary.OutputTokens, exactUsage = 0, 0, true
+					}
+					summary.InputTokens += int(usage.InputTokens)
+					summary.OutputTokens += int(usage.OutputTokens)
+				}
+			}
 		}
 		if line.Type != "response_item" || len(line.Payload) == 0 {
 			continue
@@ -195,13 +210,17 @@ func ReadRolloutFlow(path string) ([]FlowEvent, FlowSummary, error) {
 				event.Turn, event.Step = turn, 0
 				event.Kind, event.Title = "turn", "Turn 开始"
 				event.Detail = summarizeMessage(item)
-				summary.InputTokens += estimateTokens(item.Text())
+				if !exactUsage {
+					summary.InputTokens += estimateTokens(item.Text())
+				}
 			} else if item.Role == "assistant" {
 				step++
 				event.Turn, event.Step = turn, step
 				event.Kind, event.Title, event.Detail = "assistant", "模型输出 · Turn 完成", item.Text()
 				summary.ModelCalls++
-				summary.OutputTokens += estimateTokens(item.Text())
+				if !exactUsage {
+					summary.OutputTokens += estimateTokens(item.Text())
+				}
 			} else {
 				continue
 			}
@@ -212,12 +231,16 @@ func ReadRolloutFlow(path string) ([]FlowEvent, FlowSummary, error) {
 			event.Detail, event.CallID, event.Name = item.Arguments, item.CallID, item.Name
 			summary.ModelCalls++
 			summary.ToolCalls++
-			summary.OutputTokens += estimateTokens(item.Arguments)
+			if !exactUsage {
+				summary.OutputTokens += estimateTokens(item.Arguments)
+			}
 		case "function_call_output":
 			event.Turn, event.Step = turn, step
 			event.Kind, event.Title = "tool_output", "工具执行结果"
 			event.Detail, event.CallID = item.Output, item.CallID
-			summary.InputTokens += estimateTokens(item.Output)
+			if !exactUsage {
+				summary.InputTokens += estimateTokens(item.Output)
+			}
 		default:
 			continue
 		}
@@ -226,9 +249,10 @@ func ReadRolloutFlow(path string) ([]FlowEvent, FlowSummary, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, FlowSummary{}, fmt.Errorf("read rollout flow: %w", err)
 	}
-	if !firstTime.IsZero() && !lastTime.IsZero() {
+	if summary.DurationMS == 0 && !firstTime.IsZero() && !lastTime.IsZero() {
 		summary.DurationMS = lastTime.Sub(firstTime).Milliseconds()
 	}
+	summary.UsageExact = exactUsage
 	return events, summary, nil
 }
 

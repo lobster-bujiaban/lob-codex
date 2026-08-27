@@ -17,10 +17,10 @@
 |---|---|---|---|---|
 | 协议事件 | `codex-rs/protocol` | `internal/protocol` | 部分对齐 | 已拆分 `ResponseEvent` 与公开 `Event/EventMsg`，并实现文本、剪贴板图片 Message 与工具调用 ResponseItem 子集 |
 | Session/Turn | `codex-rs/core/src/session`、`codex-rs/history`、`codex-rs/core/src/session/rollout_reconstruction.rs` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 SessionMeta、TurnContext、EventMsg、ResponseItem JSONL rollout 与恢复主链 |
-| 模型客户端 | `codex-rs/core` 模型客户端 | `internal/model` | 部分对齐 | Responses API 现接收 `ResponseItem[]` 并消费文本 Delta、OutputItemDone、Completed；重试和其他 Item 类型尚未对齐 |
+| 模型客户端 | `codex-rs/core` 模型客户端、`codex-rs/codex-api/src/sse/responses.rs` | `internal/model` | 部分对齐 | Responses API 接收 `ResponseItem[]`，消费文本 Delta、OutputItemDone、Completed usage/response_id；支持建连/429/5xx 有界重试、Reasoning Item 与并行工具调用 |
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
-| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、Seatbelt、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction 与 write_stdin |
-| MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
+| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin 与后台终端清理 |
+| MCP/Skills/插件 | `codex-rs/core/src/session/mcp.rs`、`codex-rs/core-skills`、`codex-rs/core-plugins` | `internal/mcp`、`internal/extensions` | 部分对齐 | 已实现工作区/插件发现、Skill 显式提及注入、stdio MCP initialize/tools/list/tools/call、只读提示与写操作审批；动态刷新、elicitation、OAuth 和 marketplace 安装尚未实现 |
 | App Server | `codex-rs/app-server` | `internal/appserver` | 部分对齐 | 已实现 thread start/list/fork、thread_id 路由、独立 Session、workspace/History 恢复及 rollout 运行时流程视图；完整 Codex Turn 元数据尚未实现 |
 
 ## Session → Turn → Step 调用链
@@ -233,18 +233,22 @@ Session，再删除项目目录与对应 thread metadata/rollout；根目录、�
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 已实现空闲启动和运行中 input queue；`turn/steer` 校验 expected turn id，引导与 Codex 一样在当前采样结束后 drain、写入 History 并触发下一 Step，不抢占正在进行的采样。Interrupt 经 submission loop 取消当前任务。
-- `ResponseItem` 当前实现文本与 base64 `input_image` Message、FunctionCall 和 FunctionCallOutput；Reasoning、远程/本地图片预处理及音频内容尚未补齐。
+- `ResponseItem` 当前实现文本与 base64 `input_image` Message、Reasoning、FunctionCall 和 FunctionCallOutput；远程/本地图片预处理及音频内容尚未补齐。
 - Conversation History 已实现调用/输出配对标准化、上下文估算、90% 阈值自动压缩及 replacement history 恢复；Codex 的完整媒体标准化和精确 token usage 尚未实现。
-- Tool Router 当前按顺序执行；并行工具尚未实现。
-- PTY 当前使用固定 24×120 尺寸；Codex unified exec 同样未暴露 resize 工具参数，平台远程执行器尚未实现。
+- 同一模型响应中的多个工具调用并发执行，结果按模型原始调用顺序写回 History；尚未实现 Codex 的工具并发资格分类与单工具串行约束。
+- PTY 当前使用固定 24×120 尺寸；Codex unified exec 同样未暴露 resize 工具参数，远程执行器和尚未具备原生受限令牌后端的 Windows 平台仍未实现。
 - 已实现 chunk_id、输出 Delta、TerminalInteraction、1 MiB head-tail buffer、Delta 数量/大小上限和省略字节统计。
 - 审批支持 approved、approved_for_session、approved_with_amendment 与 denied；持久化规则首版采用项目 `tmp/` JSON 文件，尚未实现 Codex 正式规则语法。
 - Prefix rule 第一版只缓存简单单命令；复合 shell 中所有子命令均为内置只读命令时自动允许，否则只允许批准一次。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
+- SandboxBackend 已统一 read-only/workspace-write/network policy：macOS Seatbelt 与 Linux bubblewrap 均默认禁网，网络请求必须单次审批；workspace-write 继续保护 `.git` 与 `.codex`。其他平台在缺少后端时明确失败，不会静默无沙箱执行。
 - Rollout 已按 Codex 顶层类型持久化 `session_meta`、`turn_context`、`event_msg`、`response_item` 与 `compacted`，高频文本/终端 Delta 不落盘；hooks、精确 token 状态和启动预热尚未实现。
 - 历史页面由 canonical ResponseItem 重建消息与工具卡片；尚未恢复 Codex 完整 Turn 状态、审批卡片和终端增量事件。
 - Fork 已支持历史前缀与 workspace 继承，尚未持久化 Codex 的 `forked_from_id` 和 ordinal lineage 元数据。
-- 运行时流程视图从 canonical ResponseItem 重建 Turn、Step、工具调用和汇总指标；精确 token usage、审批与终端事件需等待对应 RolloutItem 补齐。
+- 运行时流程视图从 canonical ResponseItem 与 TurnComplete EventMsg 重建 Turn、Step、工具调用、精确 token usage 和汇总指标；审批与终端增量事件的完整回放仍待补齐。
+- 插件首版发现工作区 `plugins/*/.codex-plugin/plugin.json` 与 `.agents/plugins/*`，默认加载 `skills/`、`.mcp.json` 并合并 manifest 补充路径；尚未实现全局 marketplace、安装/卸载和启停状态。
+- Skill 首版解析 `SKILL.md` 的 name/description，并在用户显式 `$skill-name` 提及时以独立 developer item 注入；尚未实现 Codex 的模型辅助隐式选择与可用 Skill 列表提示。
+- MCP 首版支持本地 stdio JSON-RPC 和工具列表启动加载；尚未实现运行中 tools/list_changed 刷新、HTTP transport、elicitation、OAuth 与连接重试。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步

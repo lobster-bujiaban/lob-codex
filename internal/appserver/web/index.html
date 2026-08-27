@@ -705,8 +705,8 @@
       metrics.className = 'flow-metrics';
       [
         `${summary.turns || 0} 个 Turn`, `${summary.model_calls || 0} 次模型调用`,
-        `${summary.tool_calls || 0} 次工具调用`, `输入约 ${summary.input_tokens || 0} Token`,
-        `输出约 ${summary.output_tokens || 0} Token`, `总耗时 ${formatDuration(summary.duration_ms || 0)}`
+        `${summary.tool_calls || 0} 次工具调用`, `输入${summary.usage_exact ? ' ' : '约 '}${summary.input_tokens || 0} Token`,
+        `输出${summary.usage_exact ? ' ' : '约 '}${summary.output_tokens || 0} Token`, `总耗时 ${formatDuration(summary.duration_ms || 0)}`
       ].forEach((value) => {
         const metric = document.createElement('span');
         metric.className = 'flow-metric';
