@@ -25,6 +25,10 @@
 
 ## Session → Turn → Step 调用链
 
+![Codex Session、Turn、Step 主链流程图](./images/session-turn-step.png)
+
+可编辑源图位于 [`diagrams/session-turn-step.svg`](./diagrams/session-turn-step.svg)。
+
 | 顺序 | Codex | LOB Codex |
 |---|---|---|
 | 1 | `SessionIo::submit` 创建 `Submission` | `IO.Submit` 创建 `Submission` |
