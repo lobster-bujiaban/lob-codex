@@ -171,6 +171,81 @@ func TestThreadWorkspacePersistsAndRoutesExec(t *testing.T) {
 	if len(history.Items) < 4 || history.Items[0].Role != "user" || history.Items[len(history.Items)-1].Role != "assistant" {
 		t.Fatalf("resumed history = %+v", history.Items)
 	}
+	flowResponse, err := http.Get(resumedServer.URL + "/api/threads/" + thread.ID + "/flow")
+	if err != nil {
+		t.Fatalf("flow Get() error = %v", err)
+	}
+	var flow struct {
+		Events []struct {
+			Kind string `json:"kind"`
+			Turn int    `json:"turn"`
+		} `json:"events"`
+		Summary struct {
+			Turns      int `json:"turns"`
+			ModelCalls int `json:"model_calls"`
+			ToolCalls  int `json:"tool_calls"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(flowResponse.Body).Decode(&flow); err != nil {
+		t.Fatalf("decode flow: %v", err)
+	}
+	flowResponse.Body.Close()
+	if len(flow.Events) < 4 || flow.Summary.Turns != 2 || flow.Summary.ModelCalls < 2 || flow.Summary.ToolCalls < 1 {
+		t.Fatalf("flow = %+v", flow)
+	}
+	forkResponse, err := http.Post(
+		resumedServer.URL+"/api/threads/"+thread.ID+"/fork",
+		"application/json",
+		strings.NewReader(`{"item_count":1}`),
+	)
+	if err != nil {
+		t.Fatalf("fork Post() error = %v", err)
+	}
+	var forkedThread struct {
+		ID            string `json:"id"`
+		WorkspaceRoot string `json:"workspace_root"`
+	}
+	if err := json.NewDecoder(forkResponse.Body).Decode(&forkedThread); err != nil {
+		t.Fatalf("decode forked thread: %v", err)
+	}
+	forkResponse.Body.Close()
+	if forkResponse.StatusCode != http.StatusCreated || forkedThread.ID == thread.ID || forkedThread.WorkspaceRoot != canonicalWorkspace {
+		t.Fatalf("forked thread = (%d, %+v)", forkResponse.StatusCode, forkedThread)
+	}
+	forkHistoryResponse, err := http.Get(resumedServer.URL + "/api/threads/" + forkedThread.ID + "/history")
+	if err != nil {
+		t.Fatalf("fork history Get() error = %v", err)
+	}
+	var forkHistory struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(forkHistoryResponse.Body).Decode(&forkHistory); err != nil {
+		t.Fatalf("decode fork history: %v", err)
+	}
+	forkHistoryResponse.Body.Close()
+	if len(forkHistory.Items) != 1 {
+		t.Fatalf("fork history item count = %d, want 1", len(forkHistory.Items))
+	}
+	removeRequest, err := http.NewRequest(
+		http.MethodDelete,
+		resumedServer.URL+"/api/workspaces",
+		strings.NewReader(`{"workspace_root":"`+canonicalWorkspace+`"}`),
+	)
+	if err != nil {
+		t.Fatalf("create remove workspace request: %v", err)
+	}
+	removeRequest.Header.Set("Content-Type", "application/json")
+	removeResponse, err := http.DefaultClient.Do(removeRequest)
+	if err != nil {
+		t.Fatalf("remove workspace request: %v", err)
+	}
+	removeResponse.Body.Close()
+	if removeResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("remove workspace status = %d, want %d", removeResponse.StatusCode, http.StatusNoContent)
+	}
+	if _, err := os.Stat(canonicalWorkspace); !os.IsNotExist(err) {
+		t.Fatalf("workspace still exists after removal: %v", err)
+	}
 }
 
 func TestChatStreamsToolLifecycleAndFollowUp(t *testing.T) {

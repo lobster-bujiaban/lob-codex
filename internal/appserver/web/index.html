@@ -67,14 +67,31 @@
       font: 700 10px/1 var(--font);
     }
     .concept.active .concept-index { border-color: var(--orange); background: var(--orange); color: #fff; }
-    .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .new-chat-primary { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 12px; padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink); font-size: 12px; text-align: left; cursor: pointer; }
+    .new-chat-primary:hover { background: #ebe7df; }.new-chat-primary svg { width: 17px; height: 17px; }
+    .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
     .thread-header .section-label { margin: 0; }
     .new-thread { border: 0; background: transparent; color: var(--orange-dark); font-size: 11px; cursor: pointer; }
-    .thread-list { display: grid; gap: 5px; margin-top: 8px; max-height: 180px; overflow-y: auto; }
-    .thread-item { padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
-    .thread-item:hover, .thread-item.active { border-color: var(--line); background: #f0ebe3; color: var(--ink); }
+    .thread-list { display: grid; gap: 13px; margin-top: 7px; max-height: 180px; overflow-y: auto; }
+    .workspace-group { min-width: 0; }
+    .workspace-group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 32px; padding: 4px 5px; border-radius: 8px; }
+    .workspace-group-head:hover { background: #eeeae3; }
+    .workspace-group-name { min-width: 0; }.workspace-group-name strong, .workspace-group-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .workspace-group-name { display: flex; align-items: center; gap: 8px; }.workspace-group-name svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    .workspace-group-name strong { font-size: 11px; font-weight: 650; }.workspace-group-name span { display: none; }
+    .workspace-group-actions { position: relative; display: flex; gap: 2px; }
+    .workspace-action { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .workspace-action { opacity: 0; }.workspace-group-head:hover .workspace-action, .workspace-action:focus { opacity: 1; }
+    .workspace-action:hover { background: #ded9d0; color: var(--ink); }
+    .workspace-action svg { width: 14px; height: 14px; }
+    .workspace-menu { position: absolute; z-index: 10; width: 150px; margin: 28px 0 0 -122px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: 0 12px 30px rgba(37,49,67,.14); }
+    .workspace-menu button { display: flex; width: 100%; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); font-size: 10px; text-align: left; cursor: pointer; }
+    .workspace-menu button:hover { background: #f2eee8; }.workspace-menu button.danger { color: var(--red); }
+    .workspace-threads { display: grid; gap: 2px; margin-top: 2px; padding-left: 22px; }
+    .thread-item { padding: 7px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); text-align: left; cursor: pointer; }
+    .thread-item:hover, .thread-item.active { background: #e9e5df; color: var(--ink); }
     .thread-item strong, .thread-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .thread-item strong { font-size: 11px; }.thread-item span { margin-top: 3px; font-size: 9px; color: var(--muted); }
+    .thread-item strong { font-size: 11px; font-weight: 500; }.thread-item span { display: none; }
 
     .sidebar-bottom { margin-top: auto; }
     .social-title { margin: 0 0 8px 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
@@ -110,6 +127,10 @@
       padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(251,250,247,.92);
     }
     .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .view-switch { display: flex; align-self: stretch; gap: 18px; margin-right: 8px; }
+    .view-button { position: relative; padding: 0 2px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; cursor: pointer; }
+    .view-button.active { color: var(--ink); }
+    .view-button.active::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: var(--orange); }
     .home-button {
       padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px;
       background: #fff; color: var(--ink-soft); font-size: 11px; cursor: pointer;
@@ -152,9 +173,11 @@
     .bubble { padding: 12px 15px; border-radius: 5px 17px 17px 17px; white-space: pre-wrap; word-break: break-word; line-height: 1.75; }
     .assistant .bubble { border: 1px solid var(--line); background: #fff; box-shadow: 0 7px 22px rgba(37,49,67,.045); }
     .message-content { min-width: 0; }
-    .message-actions { display: flex; margin-top: 5px; }
-    .copy-message { padding: 2px 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
-    .copy-message:hover { background: #eeeae3; color: var(--ink-soft); }
+    .message-actions { display: flex; gap: 2px; margin-top: 6px; }
+    .message-action { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .message-action:hover { background: #eeeae3; color: var(--ink-soft); }
+    .message-action:disabled { opacity: .45; cursor: wait; }
+    .message-action svg { width: 15px; height: 15px; }
     .user .bubble { border-radius: 17px 5px 17px 17px; background: var(--navy); color: #fff; }
     .message.error .bubble { border-color: #efc0bc; background: #fff5f4; color: var(--red); }
     .tool-call {
@@ -181,16 +204,36 @@
     @keyframes enter { from { opacity: 0; transform: translateY(7px); } }
     @keyframes blink { to { opacity: .15; } }
 
+    .flow-view { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 28px 90px; }
+    .flow-shell { width: min(920px, 100%); margin: 0 auto; }
+    .flow-summary { padding: 18px 20px; border: 1px solid #f0cf82; border-radius: 16px; background: #fffaf0; }
+    .flow-summary h2 { margin: 0 0 10px; font-size: 15px; }
+    .flow-metrics { display: flex; flex-wrap: wrap; gap: 7px; }
+    .flow-metric { padding: 5px 9px; border-radius: 999px; background: #ffedb9; color: #7a5710; font-size: 10px; font-weight: 700; }
+    .flow-hint { margin: 9px 0 0; color: #8a7040; font-size: 11px; }
+    .flow-timeline { position: relative; display: grid; gap: 16px; margin-top: 25px; padding-left: 58px; }
+    .flow-timeline::before { content: ""; position: absolute; top: 22px; bottom: 22px; left: 22px; width: 2px; background: #dfe3e8; }
+    .flow-node { position: relative; padding: 15px 17px; border: 1px solid #e0e3e8; border-left: 5px solid #929aa7; border-radius: 14px; background: #fff; box-shadow: 0 6px 20px rgba(37,49,67,.045); }
+    .flow-node.tool_call { border-left-color: #4d73ee; }.flow-node.tool_output { border-left-color: #7359c7; }
+    .flow-node.assistant { border-left-color: var(--orange); }.flow-node.turn { border-left-color: #929aa7; }
+    .flow-index { position: absolute; top: 13px; left: -61px; display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid #929aa7; border-radius: 50%; background: var(--paper); color: #687383; font-size: 11px; font-weight: 750; z-index: 1; }
+    .tool_call .flow-index, .tool_output .flow-index { border-color: #4d73ee; color: #315bd4; }
+    .assistant .flow-index { border-color: var(--orange); color: var(--orange-dark); }
+    .flow-node-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .flow-node h3 { margin: 0; font-size: 13px; }.flow-tags { display: flex; gap: 6px; color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .flow-detail { overflow-x: auto; max-height: 220px; margin: 8px 0 0; color: var(--ink-soft); font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+    .flow-empty { padding: 80px 20px; color: var(--muted); text-align: center; }
+
     .composer-dock {
       position: absolute; right: 0; bottom: 0; left: 276px; padding: 44px 24px 16px;
       background: linear-gradient(transparent, var(--paper) 35%);
     }
     .composer-wrap { width: min(840px, 100%); margin: 0 auto; }
     form {
-      display: flex; align-items: flex-end; gap: 10px; padding: 10px 10px 10px 16px;
+      display: flex; align-items: flex-end; gap: 10px; min-height: 64px; padding: 10px 10px 10px 12px;
       border: 1px solid #dcd4c8; border-radius: 20px; background: #fff; box-shadow: var(--shadow);
     }
-    .input-stack { min-width: 0; flex: 1; }
+    .input-stack { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: flex-end; }
     .image-previews { display: flex; flex-wrap: wrap; gap: 8px; }
     .image-previews:empty { display: none; }
     .image-preview { position: relative; width: 68px; height: 68px; margin-bottom: 5px; }
@@ -200,8 +243,8 @@
     .attach-button:hover { background: var(--orange-soft); color: var(--orange-dark); }
     .attach-button svg { width: 19px; height: 19px; }
     textarea {
-      flex: 1; min-height: 44px; max-height: 170px; resize: none; padding: 10px 0 7px;
-      border: 0; outline: 0; background: transparent; color: var(--ink); line-height: 1.55;
+      display: block; width: 100%; min-height: 42px; max-height: 170px; resize: none; overflow-y: auto;
+      padding: 10px 2px 6px; border: 0; outline: 0; background: transparent; color: var(--ink); line-height: 1.55;
     }
     textarea::placeholder { color: #a4abb5; }
     .send-button {
@@ -212,7 +255,7 @@
     .send-button:hover { background: var(--orange-dark); transform: translateY(-1px); }
     .send-button:disabled { opacity: .48; cursor: wait; transform: none; }
     .send-button svg { width: 19px; height: 19px; }
-    .composer-meta { display: flex; justify-content: space-between; padding: 7px 5px 0; color: var(--muted); font-size: 10px; }
+    .composer-meta { display: flex; justify-content: space-between; padding: 8px 8px 0; color: var(--muted); font-size: 10px; }
     .composer-meta strong { color: var(--orange-dark); font-weight: 650; }
 
     @media (max-width: 820px) {
@@ -240,7 +283,12 @@
         <button class="mode-button" type="button" data-mode="learning" role="tab" aria-selected="false">学习模式</button>
       </div>
 
-      <div class="thread-header work-only"><p class="section-label">对话工作区</p><button id="new-thread" class="new-thread" type="button">＋ 新建</button></div>
+      <button id="new-conversation" class="new-chat-primary work-only" type="button">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 19l3.5-.8L18 8.7a2.1 2.1 0 0 0-3-3l-9.5 9.5L5 19Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 7.2l3.3 3.3" stroke="currentColor" stroke-width="1.8"/></svg>
+        新对话
+      </button>
+
+      <div class="thread-header work-only"><p class="section-label">项目</p><button id="new-thread" class="new-thread" type="button">＋ 添加</button></div>
       <div id="thread-list" class="thread-list work-only"></div>
 
       <p class="section-label learning-only is-hidden">当前学习主链</p>
@@ -272,6 +320,10 @@
       <header class="topbar">
         <div class="page-title"><span id="workspace-path">原理实验台 / 当前工作区</span><strong id="page-topic">Session / Turn / Step</strong></div>
         <div class="topbar-actions">
+          <div class="view-switch" role="tablist" aria-label="对话视图">
+            <button class="view-button active" type="button" data-view="conversation" role="tab" aria-selected="true">对话</button>
+            <button class="view-button" type="button" data-view="flow" role="tab" aria-selected="false">流程</button>
+          </div>
           <button id="home-button" class="home-button" type="button">返回首页</button>
           <div class="status-pill"><span class="status-dot"></span>Responses API 已连接</div>
         </div>
@@ -292,7 +344,14 @@
         </section>
       </main>
 
-      <div class="composer-dock">
+      <main id="flow-view" class="flow-view is-hidden" aria-live="polite">
+        <div class="flow-shell">
+          <section id="flow-summary" class="flow-summary"></section>
+          <section id="flow-timeline" class="flow-timeline"></section>
+        </div>
+      </main>
+
+      <div id="composer-dock" class="composer-dock">
         <div class="composer-wrap">
           <form id="chat-form">
             <input id="image-picker" type="file" accept="image/*" multiple hidden>
@@ -354,8 +413,14 @@
     const workspaceInput = document.querySelector('#workspace-input');
     const workspaceError = document.querySelector('#workspace-error');
     const homeButton = document.querySelector('#home-button');
+    const conversationView = document.querySelector('.conversation');
+    const flowView = document.querySelector('#flow-view');
+    const flowSummary = document.querySelector('#flow-summary');
+    const flowTimeline = document.querySelector('#flow-timeline');
+    const composerDock = document.querySelector('#composer-dock');
     let activeThreadID = 'current-workspace';
     let activeMode = 'work';
+    let activeView = 'conversation';
     let pendingImages = [];
     let threads = [];
     const topicProfiles = {
@@ -483,17 +548,76 @@
 
     function renderThreads() {
       threadList.replaceChildren();
+      const groups = new Map();
       threads.forEach((thread) => {
-        const button = document.createElement('button');
-        button.className = `thread-item${thread.id === activeThreadID ? ' active' : ''}`;
-        button.type = 'button';
-        const name = document.createElement('strong');
-        name.textContent = thread.workspace_root.split('/').filter(Boolean).pop() || thread.workspace_root;
+        if (!groups.has(thread.workspace_root)) groups.set(thread.workspace_root, []);
+        groups.get(thread.workspace_root).push(thread);
+      });
+      groups.forEach((workspaceThreads, workspaceRoot) => {
+        const group = document.createElement('section');
+        group.className = 'workspace-group';
+        const head = document.createElement('div');
+        head.className = 'workspace-group-head';
+        const name = document.createElement('div');
+        name.className = 'workspace-group-name';
+        const strong = document.createElement('strong');
+        strong.textContent = workspaceRoot.split('/').filter(Boolean).pop() || workspaceRoot;
         const path = document.createElement('span');
-        path.textContent = thread.workspace_root;
-        button.append(name, path);
-        button.addEventListener('click', () => selectThread(thread.id));
-        threadList.append(button);
+        path.textContent = workspaceRoot;
+        const folder = document.createElement('span');
+        folder.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M3.5 7.5h6l2-2h3.5a3 3 0 0 1 3 3v1H6a3 3 0 0 0-3 3V8a.5.5 0 0 1 .5-.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 9.5h14.5l-2 8a2 2 0 0 1-2 1.5H4.5a1.5 1.5 0 0 1-1.45-1.9l1.5-5.5A2 2 0 0 1 6 9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+        name.append(folder.firstElementChild, strong, path);
+        const actions = document.createElement('div');
+        actions.className = 'workspace-group-actions';
+        const more = document.createElement('button');
+        more.className = 'workspace-action';
+        more.type = 'button';
+        more.title = '项目菜单';
+        more.setAttribute('aria-label', '打开项目菜单');
+        more.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+        const menu = document.createElement('div');
+        menu.className = 'workspace-menu is-hidden';
+        const create = document.createElement('button');
+        create.type = 'button';
+        create.textContent = '新建对话';
+        create.addEventListener('click', () => submitThread(workspaceRoot, false));
+        menu.append(create);
+        if (!workspaceThreads.some((thread) => thread.id === 'current-workspace')) {
+          const remove = document.createElement('button');
+          remove.className = 'danger';
+          remove.type = 'button';
+          remove.textContent = '删除项目及磁盘文件';
+          remove.addEventListener('click', () => removeWorkspace(workspaceRoot));
+          menu.append(remove);
+        }
+        more.addEventListener('click', (event) => {
+          event.stopPropagation();
+          document.querySelectorAll('.workspace-menu').forEach((other) => {
+            if (other !== menu) other.classList.add('is-hidden');
+          });
+          menu.classList.toggle('is-hidden');
+        });
+        menu.addEventListener('click', (event) => event.stopPropagation());
+        actions.append(more, menu);
+        head.append(name, actions);
+        const conversations = document.createElement('div');
+        conversations.className = 'workspace-threads';
+        workspaceThreads.forEach((thread, index) => {
+          const button = document.createElement('button');
+          button.className = `thread-item${thread.id === activeThreadID ? ' active' : ''}`;
+          button.type = 'button';
+          const label = document.createElement('strong');
+          label.textContent = thread.title || (thread.id === 'current-workspace' ? '新对话' : `新对话 ${workspaceThreads.length - index}`);
+          const created = document.createElement('span');
+          created.textContent = thread.created_at_ms
+            ? new Date(thread.created_at_ms).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+            : '应用启动工作区';
+          button.append(label, created);
+          button.addEventListener('click', () => selectThread(thread.id));
+          conversations.append(button);
+        });
+        group.append(head, conversations);
+        threadList.append(group);
       });
       const active = threads.find((thread) => thread.id === activeThreadID);
       workspacePath.textContent = activeMode === 'learning'
@@ -506,6 +630,10 @@
       activeThreadID = threadID;
       renderThreads();
       showHome();
+      if (activeView === 'flow') {
+        await loadFlow(threadID);
+        return;
+      }
       try {
         const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}/history`);
         if (!response.ok) throw new Error(await response.text());
@@ -516,6 +644,106 @@
         const message = addMessage('assistant');
         message.row.classList.add('error');
         message.bubble.textContent = `恢复历史失败：${error.message}`;
+      }
+    }
+
+    function formatDuration(durationMS) {
+      if (durationMS < 1000) return `${durationMS}ms`;
+      if (durationMS < 60000) return `${(durationMS / 1000).toFixed(1)}s`;
+      return `${Math.floor(durationMS / 60000)}m ${Math.round((durationMS % 60000) / 1000)}s`;
+    }
+
+    function renderFlow(data) {
+      const summary = data.summary || {};
+      flowSummary.replaceChildren();
+      const title = document.createElement('h2');
+      title.textContent = '运行时流程概览';
+      const metrics = document.createElement('div');
+      metrics.className = 'flow-metrics';
+      [
+        `${summary.turns || 0} 个 Turn`, `${summary.model_calls || 0} 次模型调用`,
+        `${summary.tool_calls || 0} 次工具调用`, `输入约 ${summary.input_tokens || 0} Token`,
+        `输出约 ${summary.output_tokens || 0} Token`, `总耗时 ${formatDuration(summary.duration_ms || 0)}`
+      ].forEach((value) => {
+        const metric = document.createElement('span');
+        metric.className = 'flow-metric';
+        metric.textContent = value;
+        metrics.append(metric);
+      });
+      const hint = document.createElement('p');
+      hint.className = 'flow-hint';
+      hint.textContent = '基于 canonical rollout 重建；Token 为按字节估算值。';
+      flowSummary.append(title, metrics, hint);
+
+      flowTimeline.replaceChildren();
+      const events = data.events || [];
+      if (!events.length) {
+        const empty = document.createElement('div');
+        empty.className = 'flow-empty';
+        empty.textContent = '当前对话还没有可展示的运行记录';
+        flowTimeline.append(empty);
+        return;
+      }
+      events.forEach((event, index) => {
+        const node = document.createElement('article');
+        node.className = `flow-node ${event.kind}`;
+        const number = document.createElement('span');
+        number.className = 'flow-index';
+        number.textContent = index + 1;
+        const head = document.createElement('div');
+        head.className = 'flow-node-head';
+        const title = document.createElement('h3');
+        title.textContent = event.name ? `${event.title} · ${event.name}` : event.title;
+        const tags = document.createElement('div');
+        tags.className = 'flow-tags';
+        const parts = [`Turn ${event.turn}`];
+        if (event.step) parts.push(`Step ${event.step}`);
+        parts.push(`#${event.ordinal}`);
+        tags.textContent = parts.join(' · ');
+        head.append(title, tags);
+        node.append(number, head);
+        if (event.detail) {
+          const detail = document.createElement('pre');
+          detail.className = 'flow-detail';
+          detail.textContent = event.detail;
+          node.append(detail);
+        }
+        flowTimeline.append(node);
+      });
+    }
+
+    async function loadFlow(threadID = activeThreadID) {
+      flowTimeline.replaceChildren();
+      const loading = document.createElement('div');
+      loading.className = 'flow-empty';
+      loading.textContent = '正在重建运行时流程…';
+      flowTimeline.append(loading);
+      const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}/flow`);
+      if (!response.ok) throw new Error(await response.text());
+      if (activeThreadID === threadID && activeView === 'flow') renderFlow(await response.json());
+    }
+
+    async function setView(view) {
+      if (view !== 'conversation' && view !== 'flow') return;
+      activeView = view;
+      document.querySelectorAll('.view-button').forEach((button) => {
+        const active = button.dataset.view === view;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      conversationView.classList.toggle('is-hidden', view !== 'conversation');
+      composerDock.classList.toggle('is-hidden', view !== 'conversation');
+      flowView.classList.toggle('is-hidden', view !== 'flow');
+      if (view === 'flow') {
+        try {
+          await loadFlow();
+        } catch (error) {
+          flowTimeline.innerHTML = '';
+          const failed = document.createElement('div');
+          failed.className = 'flow-empty';
+          failed.textContent = `流程加载失败：${error.message}`;
+          flowTimeline.append(failed);
+        }
       }
     }
 
@@ -536,19 +764,51 @@
       workspaceInput.select();
     }
 
-    async function submitThread(workspaceRoot) {
+    function newConversation() {
+      const current = threads.find((thread) => thread.id === activeThreadID);
+      if (!current) {
+        createThread();
+        return;
+      }
+      submitThread(current.workspace_root, false);
+    }
+
+    async function submitThread(workspaceRoot, closeDialog = true) {
       const response = await fetch('/api/threads', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspace_root: workspaceRoot })
       });
       if (!response.ok) {
-        workspaceError.textContent = (await response.text()) || `HTTP ${response.status}`;
+        const message = (await response.text()) || `HTTP ${response.status}`;
+        if (closeDialog) workspaceError.textContent = message;
+        else alert(`新建对话失败：${message}`);
         return;
       }
       const thread = await response.json();
       threads.unshift(thread);
-      workspaceDialog.close();
+      if (closeDialog) workspaceDialog.close();
       selectThread(thread.id);
+    }
+
+    async function removeWorkspace(workspaceRoot) {
+      if (!confirm(`永久删除工作区“${workspaceRoot}”及其全部对话？\n\n磁盘上的项目文件会被删除，此操作不可恢复。`)) return;
+      try {
+        const response = await fetch('/api/workspaces', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspace_root: workspaceRoot })
+        });
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        const removedIDs = new Set(threads.filter((thread) => thread.workspace_root === workspaceRoot).map((thread) => thread.id));
+        threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot);
+        if (removedIDs.has(activeThreadID)) {
+          activeThreadID = threads[0]?.id || 'current-workspace';
+          await selectThread(activeThreadID);
+        } else {
+          renderThreads();
+        }
+      } catch (error) {
+        alert(`删除工作区失败：${error.message}`);
+      }
     }
 
     async function browseWorkspace() {
@@ -570,7 +830,7 @@
       messages.querySelector('.welcome')?.remove();
     }
 
-    function addMessage(role, text = '') {
+    function addMessage(role, text = '', forkItemCount = null) {
       removeWelcome();
       const row = document.createElement('div');
       row.className = `message ${role}`;
@@ -596,15 +856,39 @@
         const actions = document.createElement('div');
         actions.className = 'message-actions';
         const copy = document.createElement('button');
-        copy.className = 'copy-message';
+        copy.className = 'message-action';
         copy.type = 'button';
-        copy.textContent = '复制';
+        copy.title = '复制';
+        copy.setAttribute('aria-label', '复制消息');
+        copy.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.8"/></svg>';
         copy.addEventListener('click', async () => {
           await navigator.clipboard.writeText(bubble.innerText);
-          copy.textContent = '已复制';
-          setTimeout(() => { copy.textContent = '复制'; }, 1200);
+          copy.title = '已复制';
+          setTimeout(() => { copy.title = '复制'; }, 1200);
         });
-        actions.append(copy);
+        const fork = document.createElement('button');
+        fork.className = 'message-action';
+        fork.type = 'button';
+        fork.title = '从这里 Fork';
+        fork.setAttribute('aria-label', '从这条消息创建分支对话');
+        fork.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="6" cy="5" r="2" stroke="currentColor" stroke-width="1.8"/><circle cx="6" cy="19" r="2" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="7" r="2" stroke="currentColor" stroke-width="1.8"/><path d="M6 7v10M8 15h2a8 8 0 0 0 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+        fork.addEventListener('click', async () => {
+          fork.disabled = true;
+          try {
+            const body = forkItemCount === null ? {} : { item_count: forkItemCount };
+            const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/fork`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            });
+            if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+            const thread = await response.json();
+            threads.unshift(thread);
+            await selectThread(thread.id);
+          } catch (error) {
+            fork.disabled = false;
+            fork.title = `Fork 失败：${error.message}`;
+          }
+        });
+        actions.append(copy, fork);
         content.append(actions);
       }
       row.append(avatar, content);
@@ -652,10 +936,10 @@
       if (!items.length) return;
       messages.replaceChildren();
       const toolCalls = new Map();
-      items.forEach((item) => {
+      items.forEach((item, itemIndex) => {
         if (item.type === 'message' && (item.role === 'user' || item.role === 'assistant')) {
           const text = (item.content || []).map((content) => content.text || '').join('');
-          const message = addMessage(item.role, text);
+          const message = addMessage(item.role, text, item.role === 'assistant' ? itemIndex + 1 : null);
           (item.content || []).filter((content) => content.type === 'input_image').forEach((content) => {
             const image = document.createElement('img');
             image.src = content.image_url;
@@ -897,6 +1181,7 @@
         assistant?.bubble.classList.remove('typing');
         send.disabled = false;
         if (activeRequest === request) activeRequest = undefined;
+        loadThreads().catch(() => {});
         prompt.focus();
       }
     }
@@ -937,9 +1222,16 @@
     document.querySelectorAll('.mode-button').forEach((button) => {
       button.addEventListener('click', () => setMode(button.dataset.mode));
     });
+    document.querySelectorAll('.view-button').forEach((button) => {
+      button.addEventListener('click', () => setView(button.dataset.view));
+    });
     document.querySelector('#home-brand').addEventListener('click', () => showHome());
     document.querySelector('#home-button').addEventListener('click', () => showHome());
     document.querySelector('#new-thread').addEventListener('click', createThread);
+    document.querySelector('#new-conversation').addEventListener('click', newConversation);
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.workspace-menu').forEach((menu) => menu.classList.add('is-hidden'));
+    });
     document.querySelector('#workspace-browse').addEventListener('click', browseWorkspace);
     document.querySelector('#workspace-cancel').addEventListener('click', () => workspaceDialog.close());
     workspaceForm.addEventListener('submit', (event) => {

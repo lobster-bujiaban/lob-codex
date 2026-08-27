@@ -17,6 +17,7 @@ type threadMetadata struct {
 	WorkspaceRoot    string `json:"workspace_root"`
 	WorkingDirectory string `json:"working_directory"`
 	CreatedAtMS      int64  `json:"created_at_ms"`
+	Title            string `json:"title,omitempty"`
 }
 
 type threadStore struct {
@@ -29,6 +30,11 @@ func newThreadStore(dataRoot string) threadStore {
 
 func (store threadStore) rolloutPath(threadID string) string {
 	return filepath.Join(store.directory, threadID+".jsonl")
+}
+
+func (store threadStore) remove(threadID string) {
+	_ = os.Remove(filepath.Join(store.directory, threadID+".json"))
+	_ = os.Remove(store.rolloutPath(threadID))
 }
 
 func (store threadStore) create(workspaceRoot string) (threadMetadata, error) {

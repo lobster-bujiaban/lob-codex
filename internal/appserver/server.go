@@ -88,8 +88,11 @@ func NewHandler(client model.Client) *Handler {
 	handler.mux.HandleFunc("POST /api/approvals/{callID}", handler.respondApproval)
 	handler.mux.HandleFunc("GET /api/threads", handler.listThreads)
 	handler.mux.HandleFunc("POST /api/threads", handler.startThread)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/fork", handler.forkThread)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/history", handler.threadHistory)
+	handler.mux.HandleFunc("GET /api/threads/{threadID}/flow", handler.threadFlow)
 	handler.mux.HandleFunc("POST /api/workspaces/select", handler.selectWorkspace)
+	handler.mux.HandleFunc("DELETE /api/workspaces", handler.removeWorkspace)
 
 	staticFiles, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -223,9 +226,35 @@ func (h *Handler) listThreads(writer http.ResponseWriter, _ *http.Request) {
 	}
 	current := h.threads[h.defaultID].metadata
 	h.threadsMu.Unlock()
+	current.Title = h.threadTitle(current.ID)
+	for index := range stored {
+		stored[index].Title = h.threadTitle(stored[index].ID)
+	}
 	threads := append([]threadMetadata{current}, stored...)
 	writer.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(writer).Encode(map[string]any{"threads": threads})
+}
+
+func (h *Handler) threadTitle(threadID string) string {
+	items, _, err := session.ReadRollout(h.store.rolloutPath(threadID))
+	if err != nil {
+		return ""
+	}
+	for _, item := range items {
+		if item.Type != "message" || item.Role != "user" {
+			continue
+		}
+		title := strings.TrimSpace(item.Text())
+		if title == "" {
+			return "图片对话"
+		}
+		runes := []rune(title)
+		if len(runes) > 24 {
+			title = string(runes[:24]) + "…"
+		}
+		return title
+	}
+	return ""
 }
 
 func (h *Handler) startThread(writer http.ResponseWriter, request *http.Request) {
@@ -267,6 +296,70 @@ func (h *Handler) threadHistory(writer http.ResponseWriter, request *http.Reques
 	_ = json.NewEncoder(writer).Encode(map[string]any{"items": items})
 }
 
+func (h *Handler) threadFlow(writer http.ResponseWriter, request *http.Request) {
+	threadID := request.PathValue("threadID")
+	runtime, err := h.thread(threadID)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	runtime.chatMu.Lock()
+	defer runtime.chatMu.Unlock()
+	events, summary, err := session.ReadRolloutFlow(h.store.rolloutPath(threadID))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(map[string]any{"events": events, "summary": summary})
+}
+
+func (h *Handler) forkThread(writer http.ResponseWriter, request *http.Request) {
+	source, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	var input struct {
+		ItemCount *int `json:"item_count"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16<<10)).Decode(&input); err != nil {
+		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
+		return
+	}
+	source.chatMu.Lock()
+	defer source.chatMu.Unlock()
+	items, _, err := session.ReadRollout(h.store.rolloutPath(source.metadata.ID))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	count := len(items)
+	if input.ItemCount != nil {
+		count = *input.ItemCount
+	}
+	if count < 0 || count > len(items) {
+		http.Error(writer, "item_count is outside thread history", http.StatusBadRequest)
+		return
+	}
+	metadata, err := h.store.create(source.metadata.WorkspaceRoot)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := session.WriteRollout(h.store.rolloutPath(metadata.ID), items[:count]); err != nil {
+		h.store.remove(metadata.ID)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.threadsMu.Lock()
+	h.threads[metadata.ID] = &threadRuntime{metadata: metadata}
+	h.threadsMu.Unlock()
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(writer).Encode(metadata)
+}
+
 func (h *Handler) selectWorkspace(writer http.ResponseWriter, request *http.Request) {
 	workspaceRoot, cancelled, err := chooseWorkspace(request.Context())
 	if err != nil {
@@ -284,6 +377,66 @@ func (h *Handler) selectWorkspace(writer http.ResponseWriter, request *http.Requ
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(writer).Encode(map[string]string{"workspace_root": workspaceRoot})
+}
+
+func (h *Handler) removeWorkspace(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		WorkspaceRoot string `json:"workspace_root"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16<<10)).Decode(&input); err != nil {
+		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
+		return
+	}
+	workspaceRoot := strings.TrimSpace(input.WorkspaceRoot)
+	if workspaceRoot == "" {
+		http.Error(writer, "workspace_root is required", http.StatusBadRequest)
+		return
+	}
+	h.threadsMu.Lock()
+	var removed []*threadRuntime
+	defaultRoot := h.threads[h.defaultID].metadata.WorkspaceRoot
+	for threadID, runtime := range h.threads {
+		if threadID != h.defaultID && runtime.metadata.WorkspaceRoot == workspaceRoot {
+			removed = append(removed, runtime)
+			delete(h.threads, threadID)
+		}
+	}
+	h.threadsMu.Unlock()
+	for _, runtime := range removed {
+		runtime.mu.Lock()
+		sessionIO := runtime.io
+		runtime.io = nil
+		runtime.mu.Unlock()
+		if sessionIO != nil {
+			if err := sessionIO.Shutdown(request.Context()); err != nil {
+				http.Error(writer, err.Error(), http.StatusConflict)
+				return
+			}
+		}
+	}
+	if len(removed) == 0 {
+		http.Error(writer, "workspace is not removable", http.StatusNotFound)
+		return
+	}
+	cleanRoot := filepath.Clean(workspaceRoot)
+	home, _ := os.UserHomeDir()
+	if cleanRoot == string(filepath.Separator) || cleanRoot == filepath.Clean(home) || cleanRoot == filepath.Clean(defaultRoot) {
+		http.Error(writer, "protected workspace cannot be deleted", http.StatusBadRequest)
+		return
+	}
+	if err := os.RemoveAll(cleanRoot); err != nil {
+		h.threadsMu.Lock()
+		for _, runtime := range removed {
+			h.threads[runtime.metadata.ID] = runtime
+		}
+		h.threadsMu.Unlock()
+		http.Error(writer, fmt.Sprintf("delete workspace files: %v", err), http.StatusInternalServerError)
+		return
+	}
+	for _, runtime := range removed {
+		h.store.remove(runtime.metadata.ID)
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) thread(threadID string) (*threadRuntime, error) {

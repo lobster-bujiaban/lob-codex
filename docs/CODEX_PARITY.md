@@ -21,7 +21,7 @@
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
 | 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、Seatbelt、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction 与 write_stdin |
 | MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
-| App Server | `codex-rs/app-server` | `internal/appserver` | 部分对齐 | 已实现 thread start/list、thread_id 路由、独立 Session、workspace 元数据与 Conversation History 恢复；完整 Codex Turn 元数据尚未实现 |
+| App Server | `codex-rs/app-server` | `internal/appserver` | 部分对齐 | 已实现 thread start/list/fork、thread_id 路由、独立 Session、workspace/History 恢复及 rollout 运行时流程视图；完整 Codex Turn 元数据尚未实现 |
 
 ## Session → Turn → Step 调用链
 
@@ -89,6 +89,10 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 | 3 | ExecPolicy 决定允许、拒绝或申请审批 | 当前只读 allowlist 自动允许，其余返回“requires approval”模型结果 |
 | 4 | UnifiedExecRuntime 编排审批、Sandbox 与 ProcessManager | 当前直接进入 macOS Seatbelt，只读工作区且禁止写入和网络 |
 | 5 | ExecCommandToolOutput 截断后转 FunctionCallOutput | 返回 exit_code、wall_time_seconds、output 与截断标记 |
+
+GUI 启动环境可能没有交互式 Shell 的 PATH。执行器会保留进程 PATH，并补充 Homebrew、`/usr/local`
+及 Codex/ChatGPT bundled resources；对应目录只开放 Seatbelt 读取权限，使 `rg` 等 bundled tool 的
+行为与原生 Codex 桌面端一致。
 
 ## Exec Approval 暂停与恢复
 
@@ -184,10 +188,15 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 | 5 | App Server 按 thread id 路由 turn/approval | chat 与 approval 都定位同一个 thread-owned Session |
 | 6 | `thread/resume` 恢复 rollout 与 cwd | 启动时加载 metadata，Session 懒加载时从同 thread JSONL 恢复模型历史与页面消息 |
 | 7 | 多 thread 可分别运行 | 每个 thread 独立 chat mutex、history、审批和进程存储 |
+| 8 | `thread/fork` 从指定 rollout 位置创建新 thread | 消息工具栏按 ResponseItem 数截断历史，新 thread 继承 workspace 并恢复该前缀 |
+| 9 | App Server 管理项目与 thread 生命周期 | 侧栏按 Codex 项目/对话层级交互，首条用户消息生成标题，支持当前项目新对话及受保护的磁盘目录删除 |
 
 浏览器无法通过普通目录上传控件获得本机绝对路径，因此本地 App Server 在 macOS 使用系统
 文件夹选择器取得路径，再复用相同的 workspace 校验与 `thread/start` 主链；其他平台当前保留
 明确的“不支持原生选择器”错误，仍可手动输入绝对路径。
+
+工作区删除属于 LOB Codex 本地管理扩展：只允许删除已登记的非默认工作区，先关闭其全部
+Session，再删除项目目录与对应 thread metadata/rollout；根目录、用户主目录和当前默认工作区受保护。
 
 ## ExecPolicy 与 Session Prefix Rule
 
@@ -223,7 +232,7 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 
 ## 当前明确差异
 
-- `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
+- `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。Follow-up Step 已改为与 Codex 一样持续到模型完成或 Turn 被取消，不再设置自定义 8 Step 上限。
 - `ResponseItem` 当前实现文本与 base64 `input_image` Message、FunctionCall 和 FunctionCallOutput；Reasoning、远程/本地图片预处理及音频内容尚未补齐。
 - Conversation History 已实现调用/输出配对标准化及 ResponseItem 子集的 rollout 持久化与恢复；Codex 的完整媒体标准化、截断策略和 token 统计尚未实现。
 - Tool Router 当前按顺序执行；并行工具尚未实现。
@@ -234,6 +243,8 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
 - Rollout 当前只持久化 `response_item`，Codex 的 SessionMeta、TurnContext、EventMsg、hooks、compaction、token 状态和启动预热尚未实现。
 - 历史页面由 canonical ResponseItem 重建消息与工具卡片；尚未恢复 Codex 完整 Turn 状态、审批卡片和终端增量事件。
+- Fork 已支持历史前缀与 workspace 继承，尚未持久化 Codex 的 `forked_from_id` 和 ordinal lineage 元数据。
+- 运行时流程视图从 canonical ResponseItem 重建 Turn、Step、工具调用和汇总指标；精确 token usage、审批与终端事件需等待对应 RolloutItem 补齐。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步

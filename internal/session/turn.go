@@ -10,8 +10,6 @@ import (
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
-const maxTurnSteps = 8
-
 func (s *Session) runRegularTask(
 	ctx context.Context,
 	turnContext *TurnContext,
@@ -30,7 +28,7 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 		s.recordConversationItems(protocol.NewUserMessageWithImages(item.Text, item.ImageURLs))
 	}
 
-	for step := 0; step < maxTurnSteps; step++ {
+	for {
 		stepContext := s.captureStepContext(turnContext)
 		result, err := s.runSamplingRequest(ctx, stepContext, s.history.ForPrompt())
 		if err != nil {
@@ -45,9 +43,6 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken}
 		}
 	}
-	err := errors.New("turn exceeded maximum of 8 sampling steps")
-	s.sendEvent(turnContext, protocol.NewError(err.Error()))
-	return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken, Err: err}
 }
 
 func (s *Session) captureStepContext(turnContext *TurnContext) *StepContext {

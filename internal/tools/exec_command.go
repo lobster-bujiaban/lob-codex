@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -154,8 +156,28 @@ func sandboxedCommand(ctx context.Context, workspaceRoot, workingDirectory, comm
 (allow process-fork)
 (allow signal (target self))
 (allow sysctl-read)
-(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/Library") (subpath %q))%s`, workspaceRoot, writeRule)
+(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/Library") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/Applications/ChatGPT.app/Contents/Resources") (subpath "/Applications/Codex.app/Contents/Resources") (subpath %q))%s`, workspaceRoot, writeRule)
 	cmd := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", "-p", profile, "/bin/zsh", "-c", command)
 	cmd.Dir = workingDirectory
+	cmd.Env = append(os.Environ(), "PATH="+execSearchPath())
 	return cmd, nil
+}
+
+func execSearchPath() string {
+	directories := filepath.SplitList(os.Getenv("PATH"))
+	candidates := []string{
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+		"/Applications/Codex.app/Contents/Resources",
+		"/Applications/ChatGPT.app/Contents/Resources",
+	}
+	if executable, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Dir(executable))
+	}
+	for _, directory := range candidates {
+		if info, err := os.Stat(directory); err == nil && info.IsDir() && !slices.Contains(directories, directory) {
+			directories = append(directories, directory)
+		}
+	}
+	return strings.Join(directories, string(os.PathListSeparator))
 }
