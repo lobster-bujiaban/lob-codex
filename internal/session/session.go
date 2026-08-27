@@ -143,6 +143,7 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 	defer close(done)
 	defer close(s.events)
 	defer s.cancel()
+	defer s.tools.Close()
 
 	for submission := range submissions {
 		switch submission.Op.Type {

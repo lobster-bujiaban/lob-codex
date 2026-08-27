@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -31,17 +33,41 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 				if len(request.Input) > 1 {
 					toolName = request.Input[len(request.Input)-2].Name
 				}
+				var processResult struct {
+					SessionID int `json:"session_id"`
+				}
+				if json.Unmarshal([]byte(last.Output), &processResult) == nil && processResult.SessionID > 0 {
+					item := protocol.ResponseItem{
+						Type: "function_call", ID: "fc_fake_write_stdin", CallID: "call_fake_write_stdin",
+						Name: "write_stdin", Arguments: `{"session_id":` + fmt.Sprint(processResult.SessionID) + `,"chars":"hello\n","yield_time_ms":5000}`,
+					}
+					if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+						return
+					}
+					sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+					return
+				}
 				emitFakeText(ctx, events, "Fake model received "+toolName+" result: "+last.Output)
 				return
 			}
 		}
-
 		input := ""
 		for index := len(request.Input) - 1; index >= 0; index-- {
 			if request.Input[index].Role == "user" {
 				input = request.Input[index].Text()
 				break
 			}
+		}
+		if strings.Contains(input, "长进程演示") {
+			item := protocol.ResponseItem{
+				Type: "function_call", ID: "fc_fake_long_exec", CallID: "call_fake_long_exec",
+				Name: "exec_command", Arguments: `{"cmd":"read line; echo process-done:$line","yield_time_ms":250}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
 		}
 		if strings.Contains(input, "审批演示") {
 			item := protocol.ResponseItem{

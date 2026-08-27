@@ -65,11 +65,12 @@ type Executor interface {
 
 // Router owns the registry used both for model advertisement and execution.
 type Router struct {
-	mu       sync.RWMutex
-	registry map[string]Executor
-	order    []string
-	env      Environment
-	reviewer ApprovalReviewer
+	mu        sync.RWMutex
+	registry  map[string]Executor
+	order     []string
+	env       Environment
+	reviewer  ApprovalReviewer
+	processes *ProcessManager
 }
 
 // SetApprovalReviewer connects tool execution to the owning Session.
@@ -81,18 +82,27 @@ func (router *Router) SetApprovalReviewer(reviewer ApprovalReviewer) {
 
 // NewRouter creates an empty tool router.
 func NewRouter(environment Environment) *Router {
-	return &Router{registry: make(map[string]Executor), env: environment}
+	return &Router{registry: make(map[string]Executor), env: environment, processes: NewProcessManager()}
 }
 
 // NewDefaultRouter creates the currently implemented Codex learning tool set.
 func NewDefaultRouter(environment Environment) *Router {
 	router := NewRouter(environment)
-	for _, executor := range []Executor{EchoExecutor{}, ExecCommandExecutor{}} {
+	for _, executor := range []Executor{
+		EchoExecutor{},
+		ExecCommandExecutor{Manager: router.processes},
+		WriteStdinExecutor{Manager: router.processes},
+	} {
 		if err := router.Register(executor); err != nil {
 			panic(err)
 		}
 	}
 	return router
+}
+
+// Close stops every process still owned by this Session's router.
+func (router *Router) Close() {
+	router.processes.Close()
 }
 
 // Register adds a tool while rejecting duplicate names.

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,21 +10,19 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"time"
 )
 
 const (
-	defaultExecTimeout = 10 * time.Second
-	maxExecTimeout     = 30 * time.Second
 	defaultOutputBytes = 40 << 10
 	maxOutputBytes     = 160 << 10
 )
 
 var readOnlyCommands = []string{"file", "find", "head", "ls", "pwd", "rg", "sed", "stat", "tail", "wc"}
 
-// ExecCommandExecutor is the first local unified-exec slice. It only admits
-// read-only commands and runs them in a read-only Seatbelt sandbox on macOS.
-type ExecCommandExecutor struct{}
+// ExecCommandExecutor launches commands through the Session process manager.
+type ExecCommandExecutor struct {
+	Manager *ProcessManager
+}
 
 // Definition mirrors Codex's exec_command request shape for completed commands.
 func (ExecCommandExecutor) Definition() Definition {
@@ -49,7 +46,7 @@ func (ExecCommandExecutor) Definition() Definition {
 }
 
 // Execute resolves the turn environment, applies policy, and launches Seatbelt.
-func (ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (string, error) {
+func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (string, error) {
 	var arguments struct {
 		Command         string `json:"cmd"`
 		WorkingDir      string `json:"workdir"`
@@ -83,55 +80,17 @@ func (ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (
 		approved = true
 	}
 
-	timeout := defaultExecTimeout
-	if arguments.YieldTimeMS > 0 {
-		timeout = time.Duration(arguments.YieldTimeMS) * time.Millisecond
-		if timeout > maxExecTimeout {
-			timeout = maxExecTimeout
-		}
-	}
+	yield := clampYield(arguments.YieldTimeMS, false)
 	outputLimit := defaultOutputBytes
 	if arguments.MaxOutputTokens > 0 {
 		outputLimit = min(arguments.MaxOutputTokens*4, maxOutputBytes)
 	}
 
-	commandContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	command, err := sandboxedCommand(commandContext, invocation.Environment.WorkspaceRoot, workingDirectory, arguments.Command, approved)
+	command, err := sandboxedCommand(ctx, invocation.Environment.WorkspaceRoot, workingDirectory, arguments.Command, approved)
 	if err != nil {
 		return "", err
 	}
-	startedAt := time.Now()
-	var output bytes.Buffer
-	command.Stdout = &output
-	command.Stderr = &output
-	runErr := command.Run()
-	wallTime := time.Since(startedAt).Seconds()
-	exitCode := 0
-	if runErr != nil {
-		var exitError *exec.ExitError
-		if errors.As(runErr, &exitError) {
-			exitCode = exitError.ExitCode()
-		} else if commandContext.Err() != nil {
-			return "", fmt.Errorf("command timed out after %s", timeout)
-		} else {
-			return "", fmt.Errorf("run command: %w", runErr)
-		}
-	}
-	text, truncated := truncateOutput(output.Bytes(), outputLimit)
-	result := map[string]any{
-		"exit_code":         exitCode,
-		"wall_time_seconds": wallTime,
-		"output":            text,
-	}
-	if truncated {
-		result["output_truncated"] = true
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return "", fmt.Errorf("encode command output: %w", err)
-	}
-	return string(encoded), nil
+	return executor.Manager.start(command, yield, outputLimit)
 }
 
 func approvalReason(command string) string {

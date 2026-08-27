@@ -331,7 +331,7 @@
         description: '理解工具调用如何经过审批策略与沙箱边界，再安全地落到真实工作区。',
         prompts: [
           ['运行演示', '发起一次命令审批', '请执行审批演示，调用 exec_command 运行“pwd; echo approval-demo”，等待我批准或拒绝后再解释结果。'],
-          ['隔离执行', 'Sandbox 保护了什么', 'Codex 的 Sandbox 在命令执行过程中主要限制哪些能力？'],
+          ['长进程', '运行 session_id 演示', '请运行长进程演示，通过 exec_command 启动命令，再用 write_stdin 轮询直到完成。'],
           ['失败语义', '拒绝后如何继续', '当用户拒绝审批或沙箱阻止命令时，结果如何反馈给模型继续推理？']
         ]
       },
@@ -437,11 +437,24 @@
     function completeToolCall(toolCalls, event) {
       const toolCall = toolCalls.get(event.call_id);
       if (!toolCall) return;
-      toolCall.row.classList.add('completed');
-      toolCall.status.textContent = '已完成';
+      let parsedOutput;
+      try { parsedOutput = JSON.parse(event.output); } catch (_) {}
+      if (parsedOutput?.session_id) {
+        toolCall.status.textContent = `仍在运行 · Session ${parsedOutput.session_id}`;
+      } else {
+        toolCall.row.classList.add('completed');
+        toolCall.status.textContent = '已完成';
+      }
       const output = document.createElement('div');
       output.className = 'tool-call-output';
-      output.textContent = `输出：${event.output}`;
+      if (parsedOutput) {
+        const state = parsedOutput.session_id
+          ? `Session ID：${parsedOutput.session_id}`
+          : `退出码：${parsedOutput.exit_code}`;
+        output.textContent = `${state}${parsedOutput.output ? `\n输出：${parsedOutput.output}` : ''}`;
+      } else {
+        output.textContent = `输出：${event.output}`;
+      }
       toolCall.row.append(output);
     }
 

@@ -86,7 +86,8 @@ go run ./cmd/lob-codex
 
 当前最小 GUI 包含：多轮消息输入、Conversation History、流式回复、`echo` Tool Loop、
 `exec_command`、批准一次/拒绝、工具生命周期展示和错误展示。命令执行当前仅支持 macOS
-Seatbelt；交互进程、永久批准规则和完整 ExecPolicy 将在后续阶段加入。
+Seatbelt，并支持普通管道长进程的 `session_id` 与 `write_stdin`；完整 PTY、永久批准规则和
+完整 ExecPolicy 将在后续阶段加入。
 
 ## 交流与联系
 
