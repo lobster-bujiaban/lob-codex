@@ -17,6 +17,8 @@ func NewFakeClient() *FakeClient {
 	return &FakeClient{}
 }
 
+func (c *FakeClient) ContextWindow() int { return 128_000 }
+
 // Stream emits a small response while preserving the same lifecycle as a real model.
 func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 	events := make(chan ResponseEvent)

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"sync"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -11,6 +12,17 @@ import (
 type ConversationHistory struct {
 	mu    sync.RWMutex
 	items []protocol.ResponseItem
+}
+
+func (history *ConversationHistory) EstimatedTokens() int {
+	history.mu.RLock()
+	defer history.mu.RUnlock()
+	encoded, _ := json.Marshal(history.items)
+	return (len(encoded) + 3) / 4
+}
+
+func (history *ConversationHistory) Replace(items []protocol.ResponseItem) {
+	history.Restore(items)
 }
 
 // RecordItems appends accepted API message items in conversation order.

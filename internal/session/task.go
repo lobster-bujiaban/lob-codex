@@ -11,7 +11,7 @@ func (s *Session) spawnRegularTask(turnContext *TurnContext, input []TurnInput) 
 	s.abortActive("replaced")
 
 	taskContext, cancel := context.WithCancel(s.ctx)
-	task := &runningTask{cancel: cancel, done: make(chan struct{}), turnID: turnContext.SubID}
+	task := &runningTask{cancel: cancel, done: make(chan struct{}), turnID: turnContext.SubID, acceptingInput: true}
 	s.activeMu.Lock()
 	s.active = task
 	s.activeMu.Unlock()

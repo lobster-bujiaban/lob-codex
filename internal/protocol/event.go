@@ -17,9 +17,16 @@ type EventMsg struct {
 	ExecCommandOutputDelta   *ExecCommandOutputDeltaEvent   `json:"exec_command_output_delta,omitempty"`
 	TerminalInteraction      *TerminalInteractionEvent      `json:"terminal_interaction,omitempty"`
 	ExecApprovalRequest      *ExecApprovalRequestEvent      `json:"exec_approval_request,omitempty"`
+	ContextCompaction        *ContextCompactionEvent        `json:"context_compaction,omitempty"`
 	TurnComplete             *TurnCompleteEvent             `json:"turn_complete,omitempty"`
 	TurnAborted              *TurnAbortedEvent              `json:"turn_aborted,omitempty"`
 	Error                    *ErrorEvent                    `json:"error,omitempty"`
+}
+
+type ContextCompactionEvent struct {
+	TurnID       string `json:"turn_id"`
+	BeforeTokens int    `json:"before_tokens"`
+	AfterTokens  int    `json:"after_tokens"`
 }
 
 // ExecCommandOutputDeltaEvent carries one stdout or stderr chunk while a command runs.
@@ -163,4 +170,10 @@ func NewExecApprovalRequest(
 
 func NewError(message string) EventMsg {
 	return EventMsg{Type: "error", Error: &ErrorEvent{Message: message}}
+}
+
+func NewContextCompaction(turnID string, beforeTokens, afterTokens int) EventMsg {
+	return EventMsg{Type: "context_compaction", ContextCompaction: &ContextCompactionEvent{
+		TurnID: turnID, BeforeTokens: beforeTokens, AfterTokens: afterTokens,
+	}}
 }

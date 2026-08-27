@@ -18,9 +18,18 @@ const (
 
 // Op is the subset of Codex session operations implemented by the current port.
 type Op struct {
-	Type     OpType
-	Input    []TurnInput
-	Approval *ExecApprovalResponse
+	Type           OpType
+	Input          []TurnInput
+	ExpectedTurnID string
+	AdmissionReply chan TurnInputAdmission
+	Approval       *ExecApprovalResponse
+}
+
+// TurnInputAdmission reports whether input started a turn or steered the active one.
+type TurnInputAdmission struct {
+	TurnID string
+	Mode   string
+	Err    error
 }
 
 // ExecApprovalResponse carries a client decision back to a waiting tool call.

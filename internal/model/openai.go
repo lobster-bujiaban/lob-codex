@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -19,17 +20,19 @@ const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
 // OpenAIConfig configures an OpenAI Responses API compatible endpoint.
 type OpenAIConfig struct {
-	APIKey  string
-	BaseURL string
-	Model   string
+	APIKey        string
+	BaseURL       string
+	Model         string
+	ContextWindow int
 }
 
 // OpenAIClient streams responses from an OpenAI Responses API compatible endpoint.
 type OpenAIClient struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey        string
+	baseURL       string
+	model         string
+	contextWindow int
+	httpClient    *http.Client
 }
 
 // NewOpenAIClient validates config and creates a Responses API client.
@@ -44,23 +47,31 @@ func NewOpenAIClient(config OpenAIConfig) (*OpenAIClient, error) {
 	if baseURL == "" {
 		baseURL = defaultOpenAIBaseURL
 	}
+	if config.ContextWindow <= 0 {
+		config.ContextWindow = 128_000
+	}
 	return &OpenAIClient{
-		apiKey:     config.APIKey,
-		baseURL:    baseURL,
-		model:      config.Model,
-		httpClient: http.DefaultClient,
+		apiKey:        config.APIKey,
+		baseURL:       baseURL,
+		model:         config.Model,
+		contextWindow: config.ContextWindow,
+		httpClient:    http.DefaultClient,
 	}, nil
 }
 
 // NewOpenAIClientFromEnv loads configuration from LOB_CODEX_* variables and
 // falls back to the conventional OPENAI_* names.
 func NewOpenAIClientFromEnv() (*OpenAIClient, error) {
+	contextWindow, _ := strconv.Atoi(firstEnvironmentValue("LOB_CODEX_CONTEXT_WINDOW"))
 	return NewOpenAIClient(OpenAIConfig{
-		APIKey:  firstEnvironmentValue("LOB_CODEX_API_KEY", "OPENAI_API_KEY"),
-		BaseURL: firstEnvironmentValue("LOB_CODEX_BASE_URL", "OPENAI_BASE_URL"),
-		Model:   firstEnvironmentValue("LOB_CODEX_MODEL", "OPENAI_MODEL"),
+		APIKey:        firstEnvironmentValue("LOB_CODEX_API_KEY", "OPENAI_API_KEY"),
+		BaseURL:       firstEnvironmentValue("LOB_CODEX_BASE_URL", "OPENAI_BASE_URL"),
+		Model:         firstEnvironmentValue("LOB_CODEX_MODEL", "OPENAI_MODEL"),
+		ContextWindow: contextWindow,
 	})
 }
+
+func (c *OpenAIClient) ContextWindow() int { return c.contextWindow }
 
 // Stream starts one Responses API request and converts its SSE stream into
 // provider-independent harness events.

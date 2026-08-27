@@ -20,13 +20,14 @@ import (
 
 // Session owns the model client, active task, and public event stream.
 type Session struct {
-	client  model.Client
-	events  chan protocol.Event
-	ctx     context.Context
-	cancel  context.CancelFunc
-	history ConversationHistory
-	rollout *rolloutRecorder
-	tools   *tools.Router
+	client        model.Client
+	events        chan protocol.Event
+	ctx           context.Context
+	cancel        context.CancelFunc
+	history       ConversationHistory
+	rollout       *rolloutRecorder
+	tools         *tools.Router
+	workspaceRoot string
 
 	approvalMu sync.Mutex
 	approvals  map[string]pendingApproval
@@ -48,9 +49,10 @@ type runningTask struct {
 	done   chan struct{}
 	turnID string
 
-	mu           sync.Mutex
-	abortReason  string
-	pendingInput []TurnInput
+	mu             sync.Mutex
+	abortReason    string
+	pendingInput   []TurnInput
+	acceptingInput bool
 }
 
 type pendingApproval struct {
@@ -101,6 +103,7 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 	sess := &Session{
 		client: client, events: events, ctx: ctx, cancel: cancel,
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
+		workspaceRoot: workspaceRoot,
 	}
 	if rolloutPath != "" {
 		recorder, initialHistory, err := openRollout(rolloutPath)
@@ -109,6 +112,7 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 			return nil, nil, err
 		}
 		sess.rollout = recorder
+		sess.rollout.recordSessionMeta(workspaceRoot)
 		sess.history.Restore(initialHistory)
 	}
 	sess.tools.SetApprovalReviewer(sess.requestCommandApproval)
@@ -142,6 +146,26 @@ func (io *IO) SubmitTurnInput(ctx context.Context, text string) (string, error) 
 // SubmitTurnInputWithImages starts a turn containing text and clipboard image data URLs.
 func (io *IO) SubmitTurnInputWithImages(ctx context.Context, text string, imageURLs []string) (string, error) {
 	return io.Submit(ctx, Op{Type: OpTurnInput, Input: []TurnInput{{Text: text, ImageURLs: imageURLs}}})
+}
+
+// Steer queues input only when expectedTurnID is still the active turn.
+func (io *IO) Steer(ctx context.Context, expectedTurnID, text string) (string, error) {
+	reply := make(chan TurnInputAdmission, 1)
+	_, err := io.Submit(ctx, Op{
+		Type: OpTurnInput, Input: []TurnInput{{Text: text}},
+		ExpectedTurnID: expectedTurnID, AdmissionReply: reply,
+	})
+	if err != nil {
+		return "", err
+	}
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-io.done:
+		return "", errors.New("session stopped")
+	case admission := <-reply:
+		return admission.TurnID, admission.Err
+	}
 }
 
 // RespondExecApproval delivers a client decision through the submission loop.
@@ -216,7 +240,7 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 
 func (s *Session) recordConversationItems(items ...protocol.ResponseItem) {
 	s.history.RecordItems(items...)
-	s.rollout.record(items...)
+	s.rollout.recordResponseItems(items...)
 }
 
 func (s *Session) requestCommandApproval(ctx context.Context, request tools.ApprovalRequest) (tools.ApprovalDecision, error) {
@@ -272,21 +296,38 @@ func (s *Session) handleExecApproval(submission Submission) {
 }
 
 func (s *Session) handleTurnInput(submission Submission) {
+	reply := func(admission TurnInputAdmission) {
+		if submission.Op.AdmissionReply != nil {
+			submission.Op.AdmissionReply <- admission
+		}
+	}
 	if len(submission.Op.Input) != 1 || ValidateTurnInput(submission.Op.Input[0]) != nil {
 		s.sendEventRaw(protocol.Event{ID: submission.ID, Msg: protocol.NewError("prompt or image is required")})
+		reply(TurnInputAdmission{Err: errors.New("prompt or image is required")})
 		return
 	}
 	s.activeMu.Lock()
 	active := s.active
 	s.activeMu.Unlock()
 	if active != nil {
-		active.mu.Lock()
-		active.pendingInput = append(active.pendingInput, submission.Op.Input...)
-		active.mu.Unlock()
+		if submission.Op.ExpectedTurnID != "" && submission.Op.ExpectedTurnID != active.turnID {
+			reply(TurnInputAdmission{Err: fmt.Errorf("active turn is %q, expected %q", active.turnID, submission.Op.ExpectedTurnID)})
+			return
+		}
+		if !active.enqueueInput(submission.Op.Input) {
+			reply(TurnInputAdmission{Err: errors.New("active turn is completing and no longer accepts steer input")})
+			return
+		}
+		reply(TurnInputAdmission{TurnID: active.turnID, Mode: "steered"})
+		return
+	}
+	if submission.Op.ExpectedTurnID != "" {
+		reply(TurnInputAdmission{Err: errors.New("no active turn to steer")})
 		return
 	}
 	turnContext := &TurnContext{SubID: submission.ID}
 	s.spawnRegularTask(turnContext, submission.Op.Input)
+	reply(TurnInputAdmission{TurnID: submission.ID, Mode: "started"})
 }
 
 // ValidateInput rejects input that cannot start or steer a Codex turn.
@@ -306,6 +347,7 @@ func ValidateTurnInput(input TurnInput) error {
 }
 
 func (s *Session) sendEvent(turnContext *TurnContext, message protocol.EventMsg) {
+	s.rollout.recordEvent(message)
 	s.sendEventRaw(protocol.Event{ID: turnContext.SubID, Msg: message})
 }
 
@@ -337,10 +379,23 @@ func (task *runningTask) reason() string {
 	return task.abortReason
 }
 
-func (task *runningTask) takePendingInput() []TurnInput {
+func (task *runningTask) enqueueInput(input []TurnInput) bool {
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	if !task.acceptingInput {
+		return false
+	}
+	task.pendingInput = append(task.pendingInput, input...)
+	return true
+}
+
+func (task *runningTask) takePendingInput(keepOpen bool) []TurnInput {
 	task.mu.Lock()
 	defer task.mu.Unlock()
 	input := append([]TurnInput(nil), task.pendingInput...)
 	task.pendingInput = nil
+	if len(input) == 0 && !keepOpen {
+		task.acceptingInput = false
+	}
 	return input
 }

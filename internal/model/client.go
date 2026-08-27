@@ -39,4 +39,5 @@ type Stream struct {
 // Client creates a model stream for one sampling request.
 type Client interface {
 	Stream(context.Context, Request) Stream
+	ContextWindow() int
 }

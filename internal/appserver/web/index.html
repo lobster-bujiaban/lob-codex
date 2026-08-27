@@ -275,14 +275,14 @@
     }
     textarea::placeholder { color: #a4abb5; }
     .send-button {
-      display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto;
-      border: 0; border-radius: 13px; background: var(--orange); color: #fff; cursor: pointer;
-      box-shadow: 0 7px 16px rgba(237,90,42,.24); transition: .18s ease;
+      display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; margin: 0 3px 3px 0;
+      border: 0; border-radius: 50%; background: #202020; color: #fff; cursor: pointer;
+      box-shadow: none; transition: background .15s ease, transform .15s ease, opacity .15s ease;
     }
-    .send-button:hover { background: var(--orange-dark); transform: translateY(-1px); }
-    .send-button.stop { background: var(--ink); box-shadow: 0 7px 16px rgba(24,45,79,.2); }
+    .send-button:hover { background: #000; transform: scale(1.04); }
+    .send-button.stop { background: #202020; }
     .send-button:disabled { opacity: .48; cursor: wait; transform: none; }
-    .send-button svg { width: 19px; height: 19px; }
+    .send-button svg { width: 18px; height: 18px; }
     .composer-meta { display: flex; justify-content: space-between; padding: 8px 8px 0; color: var(--muted); font-size: 10px; }
     .composer-meta strong { color: var(--orange-dark); font-weight: 650; }
 
@@ -391,7 +391,7 @@
               <textarea id="prompt" rows="1" placeholder="问一个关于 Codex Harness 的问题…"></textarea>
             </div>
             <button id="send" class="send-button" type="submit" aria-label="发送消息">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </form>
           <div class="composer-meta"><span><strong>LOB Codex</strong> · Go 等价实现</span><span>Enter 发送 · Shift + Enter 换行</span></div>
@@ -499,9 +499,10 @@
       }
     };
     let activeRequest;
+    let activeTurnID = '';
     let interrupting = false;
-    const sendIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>';
+    const sendIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>';
 
     function updateComposerAction() {
       const shouldStop = Boolean(activeRequest) && !prompt.value.trim() && !pendingImages.length;
@@ -547,6 +548,7 @@
     function showHome(topic = 'Session / Turn / Step') {
       activeRequest?.abort();
       activeRequest = undefined;
+      activeTurnID = '';
       interrupting = false;
       messages.replaceChildren(createWelcome(topic));
       bindPromptChips(messages);
@@ -856,6 +858,7 @@
           body: JSON.stringify({ workspace_root: workspaceRoot })
         });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        activeTurnID = response.headers.get('X-Turn-ID') || '';
         const removedIDs = new Set(threads.filter((thread) => thread.workspace_root === workspaceRoot).map((thread) => thread.id));
         threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot);
         if (removedIDs.has(activeThreadID)) {
@@ -1271,7 +1274,6 @@
       const requestImages = pendingImages.slice();
       activeRequest = request;
       interrupting = false;
-      updateComposerAction();
       const userMessage = addMessage('user', text);
       requestImages.forEach((imageURL) => {
         const image = document.createElement('img');
@@ -1289,6 +1291,7 @@
       pendingImages = [];
       renderImagePreviews();
       prompt.style.height = '';
+      updateComposerAction();
 
       try {
         const response = await fetch('/api/chat', {
@@ -1322,6 +1325,8 @@
             addTerminalInteraction(toolCalls, event);
           } else if (event.type === 'exec_approval_request') {
             addApproval(event, requestThreadID);
+          } else if (event.type === 'context_compaction') {
+            addActivity(`已压缩上下文 · 约 ${event.before_tokens} → ${event.after_tokens} Token`, false);
           } else if (event.type === 'error') {
             throw new Error(event.message);
           }
@@ -1352,10 +1357,13 @@
         assistant.row.classList.add('error');
         assistant.bubble.textContent = error.message;
       } finally {
-        send.disabled = false;
-        if (activeRequest === request) activeRequest = undefined;
-        interrupting = false;
-        updateComposerAction();
+        if (activeRequest === request) {
+          activeRequest = undefined;
+          activeTurnID = '';
+          interrupting = false;
+          send.disabled = false;
+          updateComposerAction();
+        }
         loadThreads().catch(() => {});
         prompt.focus();
       }
@@ -1371,7 +1379,7 @@
       if (text || pendingImages.length) {
         if (pendingImages.length) return;
         fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/steer`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: text })
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Turn-ID': activeTurnID }, body: JSON.stringify({ prompt: text })
         }).then(async (response) => {
           if (!response.ok) throw new Error(await response.text());
           addMessage('user', text);

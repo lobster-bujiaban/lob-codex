@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,10 +15,32 @@ import (
 )
 
 type rolloutLine struct {
-	Timestamp string                 `json:"timestamp"`
-	Ordinal   uint64                 `json:"ordinal"`
-	Type      string                 `json:"type"`
-	Payload   *protocol.ResponseItem `json:"payload,omitempty"`
+	Timestamp string          `json:"timestamp"`
+	Ordinal   uint64          `json:"ordinal"`
+	Type      string          `json:"type"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+}
+
+type sessionMetaItem struct {
+	ID            string `json:"id"`
+	StartedAt     string `json:"started_at"`
+	CWD           string `json:"cwd"`
+	Source        string `json:"source"`
+	ModelProvider string `json:"model_provider"`
+}
+
+type turnContextItem struct {
+	TurnID            string `json:"turn_id"`
+	CWD               string `json:"cwd"`
+	ApprovalPolicy    string `json:"approval_policy"`
+	SandboxPolicy     string `json:"sandbox_policy"`
+	CollaborationMode string `json:"collaboration_mode"`
+}
+
+type compactedItem struct {
+	Message            string                  `json:"message"`
+	ReplacementHistory []protocol.ResponseItem `json:"replacement_history"`
+	EstimatedTokens    int                     `json:"estimated_tokens"`
 }
 
 type rolloutRecorder struct {
@@ -67,7 +90,7 @@ func openRollout(path string) (*rolloutRecorder, []protocol.ResponseItem, error)
 }
 
 // WriteRollout creates a canonical rollout containing one forked history prefix.
-func WriteRollout(path string, items []protocol.ResponseItem) error {
+func WriteRollout(path, workspaceRoot string, items []protocol.ResponseItem) error {
 	recorder, existing, err := openRollout(path)
 	if err != nil {
 		return err
@@ -76,7 +99,8 @@ func WriteRollout(path string, items []protocol.ResponseItem) error {
 		_ = recorder.close()
 		return errors.New("fork rollout already contains history")
 	}
-	recorder.record(items...)
+	recorder.recordSessionMeta(workspaceRoot)
+	recorder.recordResponseItems(items...)
 	return recorder.close()
 }
 
@@ -104,8 +128,18 @@ func ReadRollout(path string) ([]protocol.ResponseItem, uint64, error) {
 		if line.Ordinal >= nextOrdinal {
 			nextOrdinal = line.Ordinal + 1
 		}
-		if line.Type == "response_item" && line.Payload != nil {
-			items = append(items, *line.Payload)
+		if line.Type == "response_item" && len(line.Payload) != 0 {
+			var item protocol.ResponseItem
+			if err := json.Unmarshal(line.Payload, &item); err != nil {
+				return nil, 0, fmt.Errorf("decode response item ordinal %d: %w", line.Ordinal, err)
+			}
+			items = append(items, item)
+		} else if line.Type == "compacted" && len(line.Payload) != 0 {
+			var compacted compactedItem
+			if err := json.Unmarshal(line.Payload, &compacted); err != nil {
+				return nil, 0, fmt.Errorf("decode compacted item ordinal %d: %w", line.Ordinal, err)
+			}
+			items = append([]protocol.ResponseItem(nil), compacted.ReplacementHistory...)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -137,8 +171,12 @@ func ReadRolloutFlow(path string) ([]FlowEvent, FlowSummary, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 			return nil, FlowSummary{}, fmt.Errorf("decode rollout flow: %w", err)
 		}
-		if line.Type != "response_item" || line.Payload == nil {
+		if line.Type != "response_item" || len(line.Payload) == 0 {
 			continue
+		}
+		var item protocol.ResponseItem
+		if err := json.Unmarshal(line.Payload, &item); err != nil {
+			return nil, FlowSummary{}, fmt.Errorf("decode rollout response item: %w", err)
 		}
 		occurredAt, _ := time.Parse(time.RFC3339Nano, line.Timestamp)
 		if firstTime.IsZero() && !occurredAt.IsZero() {
@@ -147,7 +185,6 @@ func ReadRolloutFlow(path string) ([]FlowEvent, FlowSummary, error) {
 		if !occurredAt.IsZero() {
 			lastTime = occurredAt
 		}
-		item := *line.Payload
 		event := FlowEvent{Ordinal: line.Ordinal, Timestamp: line.Timestamp, Turn: turn, Step: step}
 		switch item.Type {
 		case "message":
@@ -219,8 +256,50 @@ func estimateTokens(text string) int {
 	return (len([]byte(text)) + 3) / 4
 }
 
-func (recorder *rolloutRecorder) record(items ...protocol.ResponseItem) {
+func (recorder *rolloutRecorder) recordResponseItems(items ...protocol.ResponseItem) {
 	if recorder == nil || len(items) == 0 {
+		return
+	}
+	for index := range items {
+		recorder.recordItem("response_item", items[index])
+	}
+}
+
+func (recorder *rolloutRecorder) recordSessionMeta(workspaceRoot string) {
+	if recorder == nil || recorder.ordinal != 0 {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	id := strings.TrimSuffix(filepath.Base(recorder.path), filepath.Ext(recorder.path))
+	recorder.recordItem("session_meta", sessionMetaItem{
+		ID: id, StartedAt: now, CWD: workspaceRoot, Source: "lob_codex", ModelProvider: "openai",
+	})
+}
+
+func (recorder *rolloutRecorder) recordTurnContext(turnID, workspaceRoot string) {
+	recorder.recordItem("turn_context", turnContextItem{
+		TurnID: turnID, CWD: workspaceRoot, ApprovalPolicy: "on-request",
+		SandboxPolicy: "workspace-write", CollaborationMode: "default",
+	})
+}
+
+func (recorder *rolloutRecorder) recordEvent(message protocol.EventMsg) {
+	switch message.Type {
+	case "agent_message_content_delta", "exec_command_output_delta":
+		return
+	default:
+		recorder.recordItem("event_msg", message)
+	}
+}
+
+func (recorder *rolloutRecorder) recordCompacted(message string, history []protocol.ResponseItem, estimatedTokens int) {
+	recorder.recordItem("compacted", compactedItem{
+		Message: message, ReplacementHistory: history, EstimatedTokens: estimatedTokens,
+	})
+}
+
+func (recorder *rolloutRecorder) recordItem(itemType string, payload any) {
+	if recorder == nil {
 		return
 	}
 	recorder.mu.Lock()
@@ -228,18 +307,20 @@ func (recorder *rolloutRecorder) record(items ...protocol.ResponseItem) {
 	if recorder.err != nil {
 		return
 	}
-	encoder := json.NewEncoder(recorder.file)
-	for index := range items {
-		line := rolloutLine{
-			Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Ordinal: recorder.ordinal,
-			Type: "response_item", Payload: &items[index],
-		}
-		if err := encoder.Encode(line); err != nil {
-			recorder.err = fmt.Errorf("append rollout %s: %w", recorder.path, err)
-			return
-		}
-		recorder.ordinal++
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		recorder.err = fmt.Errorf("encode rollout %s item: %w", itemType, err)
+		return
 	}
+	line := rolloutLine{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Ordinal: recorder.ordinal,
+		Type: itemType, Payload: encoded,
+	}
+	if err := json.NewEncoder(recorder.file).Encode(line); err != nil {
+		recorder.err = fmt.Errorf("append rollout %s: %w", recorder.path, err)
+		return
+	}
+	recorder.ordinal++
 }
 
 func (recorder *rolloutRecorder) close() error {

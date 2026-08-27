@@ -57,6 +57,8 @@ type chatStreamEvent struct {
 	ProcessID      string   `json:"process_id,omitempty"`
 	Stdin          string   `json:"stdin,omitempty"`
 	ThreadID       string   `json:"thread_id,omitempty"`
+	BeforeTokens   int      `json:"before_tokens,omitempty"`
+	AfterTokens    int      `json:"after_tokens,omitempty"`
 }
 
 // NewHandler creates the GUI and thread-aware chat API.
@@ -144,11 +146,19 @@ func (h *Handler) steerTurn(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, err.Error(), http.StatusConflict)
 		return
 	}
-	if _, err := sessionIO.SubmitTurnInput(request.Context(), strings.TrimSpace(input.Prompt)); err != nil {
+	expectedTurnID := request.Header.Get("X-Turn-ID")
+	if expectedTurnID == "" {
+		http.Error(writer, "X-Turn-ID is required", http.StatusBadRequest)
+		return
+	}
+	turnID, err := sessionIO.Steer(request.Context(), expectedTurnID, strings.TrimSpace(input.Prompt))
+	if err != nil {
 		http.Error(writer, err.Error(), http.StatusConflict)
 		return
 	}
+	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(writer).Encode(map[string]string{"turn_id": turnID})
 }
 
 func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Request) {
@@ -400,7 +410,7 @@ func (h *Handler) forkThread(writer http.ResponseWriter, request *http.Request) 
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := session.WriteRollout(h.store.rolloutPath(metadata.ID), items[:count]); err != nil {
+	if err := session.WriteRollout(h.store.rolloutPath(metadata.ID), metadata.WorkspaceRoot, items[:count]); err != nil {
 		h.store.remove(metadata.ID)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -526,6 +536,7 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 	if err != nil {
 		return false, err
 	}
+	writer.Header().Set("X-Turn-ID", turnID)
 	wrote := false
 	for {
 		event, err := sessionIO.NextEvent(request.Context())
@@ -590,6 +601,14 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 			if err := writeChatStreamEvent(writer, chatStreamEvent{
 				Type: "terminal_interaction", CallID: interaction.CallID,
 				ProcessID: interaction.ProcessID, Stdin: interaction.Stdin,
+			}); err != nil {
+				return wrote, err
+			}
+			wrote = true
+		case "context_compaction":
+			compaction := event.Msg.ContextCompaction
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type: "context_compaction", BeforeTokens: compaction.BeforeTokens, AfterTokens: compaction.AfterTokens,
 			}); err != nil {
 				return wrote, err
 			}
