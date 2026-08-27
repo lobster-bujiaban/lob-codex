@@ -1,6 +1,10 @@
 package session
 
-import "time"
+import (
+	"time"
+
+	"github.com/lobster-bujiaban/lob-codex/internal/tools"
+)
 
 // OpType identifies an operation dispatched by the session submission loop.
 type OpType string
@@ -35,7 +39,8 @@ type TurnContext struct {
 
 // StepContext is the immutable request view captured before each model sampling request.
 type StepContext struct {
-	Turn *TurnContext
+	Turn       *TurnContext
+	ToolRouter *tools.Router
 }
 
 type samplingRequestResult struct {

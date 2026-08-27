@@ -4,9 +4,19 @@ package protocol
 // and the Responses API. This stage implements Codex's message subset; later
 // stages add reasoning and tool-call variants without changing history ownership.
 type ResponseItem struct {
-	Type    string        `json:"type"`
-	Role    string        `json:"role"`
-	Content []ContentItem `json:"content"`
+	Type      string        `json:"type"`
+	ID        string        `json:"id,omitempty"`
+	Role      string        `json:"role,omitempty"`
+	Content   []ContentItem `json:"content,omitempty"`
+	CallID    string        `json:"call_id,omitempty"`
+	Name      string        `json:"name,omitempty"`
+	Arguments string        `json:"arguments,omitempty"`
+	Output    string        `json:"output,omitempty"`
+}
+
+// NewFunctionCallOutput creates the model-visible result paired with one call.
+func NewFunctionCallOutput(callID, output string) ResponseItem {
+	return ResponseItem{Type: "function_call_output", CallID: callID, Output: output}
 }
 
 // ContentItem is one typed piece of message content.

@@ -5,11 +5,13 @@ import (
 	"context"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
+	"github.com/lobster-bujiaban/lob-codex/internal/tools"
 )
 
 // Request contains the provider-independent input for one sampling request.
 type Request struct {
 	Input []protocol.ResponseItem
+	Tools []tools.Definition
 }
 
 // ResponseEventType identifies an internal model stream event.

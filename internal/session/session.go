@@ -12,6 +12,7 @@ import (
 
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
+	"github.com/lobster-bujiaban/lob-codex/internal/tools"
 )
 
 // Session owns the model client, active task, and public event stream.
@@ -21,6 +22,7 @@ type Session struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	history ConversationHistory
+	tools   *tools.Router
 
 	activeMu sync.Mutex
 	active   *runningTask
@@ -48,7 +50,7 @@ func New(client model.Client) (*Session, *IO) {
 	submissions := make(chan Submission)
 	events := make(chan protocol.Event, 128)
 	done := make(chan struct{})
-	sess := &Session{client: client, events: events, ctx: ctx, cancel: cancel}
+	sess := &Session{client: client, events: events, ctx: ctx, cancel: cancel, tools: tools.NewDefaultRouter()}
 	io := &IO{txSub: submissions, rxEvent: events, done: done}
 	go sess.submissionLoop(submissions, done)
 	return sess, io

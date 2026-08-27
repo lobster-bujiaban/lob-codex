@@ -18,7 +18,8 @@ func (history *ConversationHistory) RecordItems(items ...protocol.ResponseItem) 
 	history.mu.Lock()
 	defer history.mu.Unlock()
 	for _, item := range items {
-		if item.Type == "message" {
+		switch item.Type {
+		case "message", "function_call", "function_call_output":
 			history.items = append(history.items, item)
 		}
 	}

@@ -12,9 +12,25 @@ type EventMsg struct {
 	Type                     string                         `json:"type"`
 	TurnStarted              *TurnStartedEvent              `json:"turn_started,omitempty"`
 	AgentMessageContentDelta *AgentMessageContentDeltaEvent `json:"agent_message_content_delta,omitempty"`
+	ToolCallStarted          *ToolCallStartedEvent          `json:"tool_call_started,omitempty"`
+	ToolCallCompleted        *ToolCallCompletedEvent        `json:"tool_call_completed,omitempty"`
 	TurnComplete             *TurnCompleteEvent             `json:"turn_complete,omitempty"`
 	TurnAborted              *TurnAbortedEvent              `json:"turn_aborted,omitempty"`
 	Error                    *ErrorEvent                    `json:"error,omitempty"`
+}
+
+// ToolCallStartedEvent exposes a routed model tool invocation to clients.
+type ToolCallStartedEvent struct {
+	CallID    string `json:"call_id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolCallCompletedEvent exposes the model-visible output recorded in history.
+type ToolCallCompletedEvent struct {
+	CallID string `json:"call_id"`
+	Name   string `json:"name"`
+	Output string `json:"output"`
 }
 
 // TurnStartedEvent mirrors Codex's public turn-start lifecycle event.
@@ -62,6 +78,20 @@ func NewAgentMessageContentDelta(turnID, delta string) EventMsg {
 	return EventMsg{
 		Type:                     "agent_message_content_delta",
 		AgentMessageContentDelta: &AgentMessageContentDeltaEvent{TurnID: turnID, Delta: delta},
+	}
+}
+
+func NewToolCallStarted(callID, name, arguments string) EventMsg {
+	return EventMsg{
+		Type:            "tool_call_started",
+		ToolCallStarted: &ToolCallStartedEvent{CallID: callID, Name: name, Arguments: arguments},
+	}
+}
+
+func NewToolCallCompleted(callID, name, output string) EventMsg {
+	return EventMsg{
+		Type:              "tool_call_completed",
+		ToolCallCompleted: &ToolCallCompletedEvent{CallID: callID, Name: name, Output: output},
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
+const maxTurnSteps = 8
+
 func (s *Session) runRegularTask(
 	ctx context.Context,
 	turnContext *TurnContext,
@@ -28,7 +30,7 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 		s.history.RecordItems(protocol.NewUserMessage(item.Text))
 	}
 
-	for {
+	for step := 0; step < maxTurnSteps; step++ {
 		stepContext := s.captureStepContext(turnContext)
 		result, err := s.runSamplingRequest(ctx, stepContext, s.history.ForPrompt())
 		if err != nil {
@@ -43,10 +45,13 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken}
 		}
 	}
+	err := errors.New("turn exceeded maximum of 8 sampling steps")
+	s.sendEvent(turnContext, protocol.NewError(err.Error()))
+	return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken, Err: err}
 }
 
 func (s *Session) captureStepContext(turnContext *TurnContext) *StepContext {
-	return &StepContext{Turn: turnContext}
+	return &StepContext{Turn: turnContext, ToolRouter: s.tools}
 }
 
 func (s *Session) runSamplingRequest(
@@ -58,13 +63,17 @@ func (s *Session) runSamplingRequest(
 		return samplingRequestResult{}, errors.New("conversation history is empty")
 	}
 
-	stream := s.client.Stream(ctx, model.Request{Input: input})
+	stream := s.client.Stream(ctx, model.Request{
+		Input: input,
+		Tools: stepContext.ToolRouter.ModelVisibleDefinitions(),
+	})
 	events := stream.Events
 	errorsChannel := stream.Errors
 	var output strings.Builder
 	var timeToFirstToken *int64
 	var completedItem *protocol.ResponseItem
 	recordedOutputItem := false
+	needsFollowUp := false
 	completed := false
 
 	for events != nil || errorsChannel != nil {
@@ -93,6 +102,22 @@ func (s *Session) runSamplingRequest(
 					completedItem = &item
 					s.history.RecordItems(item)
 					recordedOutputItem = true
+					call, err := stepContext.ToolRouter.BuildToolCall(item)
+					if err != nil {
+						callID := item.CallID
+						if callID == "" {
+							callID = "invalid_function_call"
+						}
+						toolOutput := protocol.NewFunctionCallOutput(callID, err.Error())
+						s.history.RecordItems(toolOutput)
+						needsFollowUp = true
+					} else if call != nil {
+						s.sendEvent(stepContext.Turn, protocol.NewToolCallStarted(call.CallID, call.Name, call.Arguments))
+						toolOutput := stepContext.ToolRouter.Execute(ctx, *call)
+						s.history.RecordItems(toolOutput)
+						s.sendEvent(stepContext.Turn, protocol.NewToolCallCompleted(call.CallID, call.Name, toolOutput.Output))
+						needsFollowUp = true
+					}
 				}
 			case model.ResponseCompleted:
 				completed = true
@@ -123,7 +148,7 @@ func (s *Session) runSamplingRequest(
 		message = completedItem.Text()
 	}
 	return samplingRequestResult{
-		NeedsFollowUp:    false,
+		NeedsFollowUp:    needsFollowUp,
 		LastAgentMessage: &message,
 		TimeToFirstToken: timeToFirstToken,
 	}, nil

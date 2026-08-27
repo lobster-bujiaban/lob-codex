@@ -18,7 +18,7 @@
 | 协议事件 | `codex-rs/protocol` | `internal/protocol` | 部分对齐 | 已拆分 `ResponseEvent` 与公开 `Event/EventMsg`，并实现 Message 类型的 `ResponseItem` 子集 |
 | Session/Turn | `codex-rs/core/src/session` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 Conversation History 的采样与回写主链 |
 | 模型客户端 | `codex-rs/core` 模型客户端 | `internal/model` | 部分对齐 | Responses API 现接收 `ResponseItem[]` 并消费文本 Delta、OutputItemDone、Completed；重试和其他 Item 类型尚未对齐 |
-| 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 未开始 | 必须复现注册、路由、审批和结果回传流程 |
+| 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router 边界、echo 执行器、模型可见错误和结果回传 |
 | 命令执行 | `codex-rs/core/src/exec.rs` | `internal/execution` | 未开始 | 必须保留取消、超时、输出截断和沙箱边界 |
 | MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
 | App Server | `codex-rs/app-server` | `internal/appserver` | 原型 | 服务现持有长生命周期 Session；线程路由和多会话协议尚未实现 |
@@ -54,16 +54,31 @@
 | 4 | `ResponseEvent::OutputItemDone` 交给输出处理并记录 | `ResponseOutputItemDone` 到达时立即回写 Conversation History |
 | 5 | 下一 Turn 再次从完整 History 构造 prompt | 长生命周期 Session 保留历史并向下一次请求发送完整数组 |
 
+## Tool Router → Agent Tool Loop
+
+![Codex Tool Router 与 Agent Tool Loop 流程图](./images/tool-router-loop.png)
+
+可编辑源图位于 [`diagrams/tool-router-loop.svg`](./diagrams/tool-router-loop.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | StepContext 持有本 Step 的 ToolRouter 与模型可见 ToolSpec | `captureStepContext` 捕获 Router，请求携带 `[]tools.Definition` |
+| 2 | `OutputItemDone(FunctionCall)` 交给 `ToolRouter::build_tool_call` | `BuildToolCall` 将 FunctionCall ResponseItem 转为内部 Call |
+| 3 | 原始调用先记录，再交给工具 Runtime | FunctionCall 先写 History，再由 Router 查找并执行 echo |
+| 4 | 参数或路由错误转换为给模型的 FunctionCallOutput | 未知工具与参数错误均生成模型可见输出，不直接终止 Turn |
+| 5 | 工具结果写回 History，并设置 `needs_follow_up` | FunctionCallOutput 写回 History，下一 Step 从完整历史继续采样 |
+| 6 | 客户端接收工具调用生命周期事件 | App Server 以 NDJSON 推送 started/completed，GUI 显示工具卡片 |
+
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
-- `ResponseItem` 当前只实现文本 Message；Reasoning、工具调用、图片和音频内容将在对应阶段补齐。
+- `ResponseItem` 当前实现文本 Message、FunctionCall 与 FunctionCallOutput；Reasoning、图片和音频内容尚未补齐。
 - Conversation History 尚未实现 Codex 的标准化、截断策略、token 统计、rollout 持久化与恢复。
-- 工具调用尚未产生 `needs_follow_up`，循环结构已保留但不会进入第二次采样。
+- Tool Router 当前只有无副作用的 echo，按顺序执行；并行工具、审批策略和沙箱尚未实现。
 - Codex 的 rollout 持久化、hooks、compaction、token 状态和启动预热尚未实现。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步
 
-进入 ToolRouter 和 `needs_follow_up` 工具循环：扩展 `ResponseItem` 的 FunctionCall 与
-FunctionCallOutput，按 Codex 的 OutputItemDone → 路由 → 执行 → 回写历史 → 再采样顺序实现。
+继续扩展 Tool Router 的只读工具与执行上下文：加入 `read_file`、`list_files`，随后进入
+Approval 与 Sandbox，保持同一条 FunctionCallOutput 回写和 follow-up 采样主链。

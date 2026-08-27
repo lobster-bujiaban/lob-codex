@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102747"/><stop offset="1" stop-color="#08172d"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#020817" flood-opacity=".36"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#f9733d"/></marker>
+    <style>
+      .title{font:700 36px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#f8fafc}.sub{font:400 16px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#9aabc1}.lane{font:700 18px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#dbeafe}.nt{font:700 18px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#f8fafc}.tx{font:400 14px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#b8c5d8}.mono{font:600 13px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#dbeafe}.noteh{font:700 17px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#172d4f}.note{font:400 14px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#40536e}
+    </style>
+  </defs>
+  <rect width="1400" height="900" fill="url(#bg)"/><circle cx="1300" cy="80" r="190" fill="#f9733d" opacity=".07"/><circle cx="80" cy="830" r="230" fill="#38bdf8" opacity=".05"/>
+  <text x="70" y="72" class="title">Tool Router → Agent Tool Loop</text><text x="70" y="105" class="sub">FunctionCall 不是终点：记录、路由、执行、回写，再进入下一个 Step</text>
+
+  <g transform="translate(70 150)"><rect width="350" height="500" rx="24" fill="#132d50" stroke="#315078"/><text x="28" y="45" class="lane">Step / Model</text>
+    <g transform="translate(25 85)" filter="url(#shadow)"><rect width="300" height="120" rx="18" fill="#1b3a63" stroke="#38bdf8"/><text x="20" y="38" class="nt">Responses API</text><text x="20" y="70" class="mono">tools: [echo]</text><text x="20" y="94" class="tx">History 作为 input</text></g>
+    <g transform="translate(25 275)" filter="url(#shadow)"><rect width="300" height="145" rx="18" fill="#1b3a63" stroke="#f9733d"/><text x="20" y="38" class="nt">OutputItemDone</text><text x="20" y="70" class="mono">type: function_call</text><text x="20" y="96" class="mono">name: echo</text><text x="20" y="122" class="mono">call_id + arguments</text></g>
+    <path d="M175 205V265" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+  </g>
+
+  <g transform="translate(500 150)"><rect width="400" height="500" rx="24" fill="#132d50" stroke="#315078"/><text x="28" y="45" class="lane">Tool Router</text>
+    <g transform="translate(25 82)" filter="url(#shadow)"><rect width="350" height="110" rx="18" fill="#1b3a63" stroke="#a78bfa"/><text x="20" y="38" class="nt">BuildToolCall</text><text x="20" y="70" class="tx">ResponseItem → Call{name, callID, args}</text></g>
+    <g transform="translate(25 225)" filter="url(#shadow)"><rect width="350" height="110" rx="18" fill="#1b3a63" stroke="#a78bfa"/><text x="20" y="38" class="nt">Registry Lookup</text><text x="20" y="70" class="tx">按工具名查找 Executor</text></g>
+    <g transform="translate(25 368)" filter="url(#shadow)"><rect width="350" height="90" rx="18" fill="#253b5d" stroke="#f9733d"/><text x="20" y="36" class="nt">模型可见错误</text><text x="20" y="64" class="tx">未知工具 / 参数错误不终止 Turn</text></g>
+    <path d="M200 192V215" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/><path d="M200 335V358" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+  </g>
+
+  <g transform="translate(980 150)"><rect width="350" height="500" rx="24" fill="#132d50" stroke="#315078"/><text x="28" y="45" class="lane">Executor / History</text>
+    <g transform="translate(25 82)" filter="url(#shadow)"><rect width="300" height="110" rx="18" fill="#1b3a63" stroke="#34d399"/><text x="20" y="38" class="nt">EchoExecutor</text><text x="20" y="70" class="tx">校验 JSON，执行无副作用回显</text></g>
+    <g transform="translate(25 245)" filter="url(#shadow)"><rect width="300" height="145" rx="18" fill="#1b3a63" stroke="#f9733d"/><text x="20" y="38" class="nt">FunctionCallOutput</text><text x="20" y="70" class="mono">call_id: 原调用 ID</text><text x="20" y="96" class="mono">output: 执行结果</text><text x="20" y="122" class="tx">立即写回 History</text></g>
+    <text x="28" y="445" class="tx">needs_follow_up = true</text><text x="28" y="474" class="tx">重新进入下一 Step</text>
+  </g>
+
+  <path d="M420 420H490" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/><path d="M900 300H970" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M1155 650V700H245V660" fill="none" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/><text x="590" y="727" class="sub">History 已包含 Call + Output，下一次采样可以生成最终回答</text>
+
+  <g transform="translate(70 770)"><rect width="1260" height="82" rx="20" fill="#fff8ee"/><text x="28" y="32" class="noteh">核心思想</text><text x="28" y="59" class="note">模型只提出工具意图，Router 掌握可执行能力。任何可恢复失败都写成工具结果交还模型，使一次 Turn 能在多个 Step 中持续推进。</text></g>
+</svg>

@@ -26,6 +26,16 @@ type Handler struct {
 	chatMu    sync.Mutex
 }
 
+type chatStreamEvent struct {
+	Type      string `json:"type"`
+	Delta     string `json:"delta,omitempty"`
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Output    string `json:"output,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
 // NewHandler creates the GUI and chat API using one long-lived model session.
 func NewHandler(client model.Client) *Handler {
 	_, sessionIO := session.New(client)
@@ -68,7 +78,7 @@ func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	writer.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 
@@ -78,7 +88,7 @@ func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 			http.Error(writer, err.Error(), http.StatusBadGateway)
 			return
 		}
-		fmt.Fprintf(writer, "\n\n[error] %v", err)
+		_ = writeChatStreamEvent(writer, chatStreamEvent{Type: "error", Message: err.Error()})
 	}
 }
 
@@ -98,13 +108,35 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 		}
 		switch event.Msg.Type {
 		case "agent_message_content_delta":
-			if _, err := fmt.Fprint(writer, event.Msg.AgentMessageContentDelta.Delta); err != nil {
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type:  "assistant_delta",
+				Delta: event.Msg.AgentMessageContentDelta.Delta,
+			}); err != nil {
 				return wrote, err
 			}
 			wrote = true
-			if flusher, ok := writer.(http.Flusher); ok {
-				flusher.Flush()
+		case "tool_call_started":
+			toolCall := event.Msg.ToolCallStarted
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type:      "tool_call_started",
+				CallID:    toolCall.CallID,
+				Name:      toolCall.Name,
+				Arguments: toolCall.Arguments,
+			}); err != nil {
+				return wrote, err
 			}
+			wrote = true
+		case "tool_call_completed":
+			toolCall := event.Msg.ToolCallCompleted
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type:   "tool_call_completed",
+				CallID: toolCall.CallID,
+				Name:   toolCall.Name,
+				Output: toolCall.Output,
+			}); err != nil {
+				return wrote, err
+			}
+			wrote = true
 		case "turn_complete":
 			if event.Msg.TurnComplete.Error != nil {
 				return wrote, errors.New(event.Msg.TurnComplete.Error.Message)
@@ -114,4 +146,14 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 			return wrote, fmt.Errorf("turn aborted: %s", event.Msg.TurnAborted.Reason)
 		}
 	}
+}
+
+func writeChatStreamEvent(writer http.ResponseWriter, event chatStreamEvent) error {
+	if err := json.NewEncoder(writer).Encode(event); err != nil {
+		return err
+	}
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
 }

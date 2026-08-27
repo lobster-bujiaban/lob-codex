@@ -82,9 +82,11 @@ func (c *OpenAIClient) Stream(ctx context.Context, request Request) Stream {
 
 func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<- ResponseEvent) error {
 	body, err := json.Marshal(map[string]any{
-		"model":  c.model,
-		"input":  request.Input,
-		"stream": true,
+		"model":               c.model,
+		"input":               request.Input,
+		"tools":               request.Tools,
+		"parallel_tool_calls": false,
+		"stream":              true,
 	})
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)

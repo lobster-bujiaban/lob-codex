@@ -143,6 +143,17 @@
     .assistant .bubble { border: 1px solid var(--line); background: #fff; box-shadow: 0 7px 22px rgba(37,49,67,.045); }
     .user .bubble { border-radius: 17px 5px 17px 17px; background: var(--navy); color: #fff; }
     .message.error .bubble { border-color: #efc0bc; background: #fff5f4; color: var(--red); }
+    .tool-call {
+      align-self: flex-start; width: min(620px, 88%); padding: 13px 15px;
+      border: 1px solid #d8d2ef; border-radius: 14px; background: #faf9ff; color: var(--ink-soft);
+      animation: enter .22s ease both;
+    }
+    .tool-call-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .tool-call-name { color: #5b4ba8; font-size: 12px; font-weight: 750; }
+    .tool-call-status { color: var(--muted); font-size: 10px; }
+    .tool-call.completed .tool-call-status { color: var(--green); }
+    .tool-call pre { overflow-x: auto; margin: 8px 0 0; color: #53627a; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .tool-call-output { margin-top: 9px; padding-top: 9px; border-top: 1px solid #e4e0f2; font-size: 12px; }
     .typing::after { content: ""; display: inline-block; width: 5px; height: 14px; margin-left: 4px; background: var(--orange); vertical-align: -2px; animation: blink .7s infinite alternate; }
     @keyframes enter { from { opacity: 0; transform: translateY(7px); } }
     @keyframes blink { to { opacity: .15; } }
@@ -301,7 +312,7 @@
         title: '模型不会直接执行工具',
         description: '从模型输出 Tool Call，到路由、执行、结果回写和再次采样，拆开 Agent Tool Loop。',
         prompts: [
-          ['调用识别', 'Tool Call 如何被发现', 'Codex 如何从模型的 ResponseItem 中识别一次工具调用？'],
+          ['运行演示', '调用 echo 跑一次 Tool Loop', '请调用 echo 工具回显“LOB Codex Tool Loop”，再根据工具结果告诉我完整调用流程。'],
           ['路由职责', 'Tool Router 负责什么', 'Tool Router 为什么要把工具查找、参数校验和实际执行分开？'],
           ['循环机制', '为什么需要再次采样', '工具执行结果写回 Conversation History 后，Codex 为什么还要启动下一次 Step？']
         ]
@@ -393,13 +404,45 @@
       return { row, bubble };
     }
 
+    function addToolCall(toolCalls, event) {
+      removeWelcome();
+      const row = document.createElement('div');
+      row.className = 'tool-call';
+      const header = document.createElement('div');
+      header.className = 'tool-call-header';
+      const name = document.createElement('span');
+      name.className = 'tool-call-name';
+      name.textContent = `Tool · ${event.name}`;
+      const status = document.createElement('span');
+      status.className = 'tool-call-status';
+      status.textContent = '执行中';
+      const argumentsView = document.createElement('pre');
+      argumentsView.textContent = event.arguments;
+      header.append(name, status);
+      row.append(header, argumentsView);
+      messages.append(row);
+      toolCalls.set(event.call_id, { row, status });
+      row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function completeToolCall(toolCalls, event) {
+      const toolCall = toolCalls.get(event.call_id);
+      if (!toolCall) return;
+      toolCall.row.classList.add('completed');
+      toolCall.status.textContent = '已完成';
+      const output = document.createElement('div');
+      output.className = 'tool-call-output';
+      output.textContent = `输出：${event.output}`;
+      toolCall.row.append(output);
+    }
+
     async function submitPrompt(text) {
       if (!text || send.disabled) return;
       const request = new AbortController();
       activeRequest = request;
       addMessage('user', text);
-      const assistant = addMessage('assistant');
-      assistant.bubble.classList.add('typing');
+      let assistant;
+      const toolCalls = new Map();
       prompt.value = '';
       prompt.style.height = '';
       send.disabled = true;
@@ -415,18 +458,40 @@
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
+        const handleStreamEvent = (event) => {
+          if (event.type === 'assistant_delta') {
+            if (!assistant) {
+              assistant = addMessage('assistant');
+              assistant.bubble.classList.add('typing');
+            }
+            assistant.bubble.textContent += event.delta;
+            assistant.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          } else if (event.type === 'tool_call_started') {
+            addToolCall(toolCalls, event);
+          } else if (event.type === 'tool_call_completed') {
+            completeToolCall(toolCalls, event);
+          } else if (event.type === 'error') {
+            throw new Error(event.message);
+          }
+        };
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
-          assistant.bubble.textContent += decoder.decode(value, { stream: true });
-          assistant.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          lines.filter(Boolean).forEach((line) => handleStreamEvent(JSON.parse(line)));
         }
+        buffer += decoder.decode();
+        if (buffer.trim()) handleStreamEvent(JSON.parse(buffer));
       } catch (error) {
         if (error.name === 'AbortError') return;
+        if (!assistant) assistant = addMessage('assistant');
         assistant.row.classList.add('error');
         assistant.bubble.textContent = error.message;
       } finally {
-        assistant.bubble.classList.remove('typing');
+        assistant?.bubble.classList.remove('typing');
         send.disabled = false;
         if (activeRequest === request) activeRequest = undefined;
         prompt.focus();
