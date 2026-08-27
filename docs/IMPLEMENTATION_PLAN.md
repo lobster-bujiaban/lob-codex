@@ -22,7 +22,7 @@ MCP / Skills / Plugins / Subagents
 
 ## 2. Codex 源码阅读地图
 
-参考仓库：`/Users/chiyi/Desktop/youth/lob-code/codex`
+参考仓库：OpenAI Codex 源码仓库。
 
 | 学习主题 | Codex 参考位置 | LOB Codex 预定 package |
 |---|---|---|

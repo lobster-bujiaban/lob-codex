@@ -4,8 +4,7 @@
 
 从零实现一个可读、可运行、可扩展的 Coding Agent Harness。
 
-本项目以 `/Users/chiyi/Desktop/youth/lob-code/codex` 作为 Codex 源码参考，以
-`/Users/chiyi/Desktop/youth/lob-code/lob-harness` 作为功能与教学工程参考，
+本项目以 OpenAI Codex 源码作为架构参考，以 LOB Harness 作为功能与教学工程参考，
 但不直接复制实现。目标是按最小闭环逐层构建，并在每个阶段留下可运行结果。
 
 ## 核心目标
