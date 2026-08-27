@@ -13,6 +13,7 @@ import (
 
 	"github.com/lobster-bujiaban/lob-codex/internal/agent"
 	"github.com/lobster-bujiaban/lob-codex/internal/appserver"
+	"github.com/lobster-bujiaban/lob-codex/internal/config"
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
@@ -20,6 +21,7 @@ import (
 const usage = `LOB Codex - a coding agent harness built step by step in Go
 
 Usage:
+  lob-codex
   lob-codex <prompt>
   lob-codex serve [-addr 127.0.0.1:0]
 
@@ -44,6 +46,14 @@ func (s terminalSink) Emit(event protocol.Event) error {
 }
 
 func main() {
+	if len(os.Args) == 1 {
+		if err := serve(nil); err != nil {
+			fmt.Fprintf(os.Stderr, "lob-codex: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "serve" {
 		if err := serve(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "lob-codex: %v\n", err)
@@ -74,6 +84,9 @@ func serve(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	address := flags.String("addr", "127.0.0.1:0", "HTTP listen address; port 0 selects a free port")
 	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := config.LoadOptionalDotEnv(".env"); err != nil {
 		return err
 	}
 
