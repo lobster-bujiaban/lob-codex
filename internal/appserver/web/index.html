@@ -313,7 +313,7 @@
         description: '从模型输出 Tool Call，到路由、执行、结果回写和再次采样，拆开 Agent Tool Loop。',
         prompts: [
           ['运行演示', '调用 echo 跑一次 Tool Loop', '请调用 echo 工具回显“LOB Codex Tool Loop”，再根据工具结果告诉我完整调用流程。'],
-          ['路由职责', 'Tool Router 负责什么', 'Tool Router 为什么要把工具查找、参数校验和实际执行分开？'],
+          ['工作区读取', '用 exec_command 列出文件', '请使用 exec_command 的 rg --files 列出当前工作区文件，并概括项目结构。'],
           ['循环机制', '为什么需要再次采样', '工具执行结果写回 Conversation History 后，Codex 为什么还要启动下一次 Step？']
         ]
       },

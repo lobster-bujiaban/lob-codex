@@ -84,8 +84,9 @@ go run ./cmd/lob-codex
 也兼容 `OPENAI_API_KEY`、`OPENAI_MODEL` 和 `OPENAI_BASE_URL` 环境变量。
 程序启动时会自动读取当前目录的 `.env`，已有系统环境变量优先级更高。
 
-当前最小 GUI 包含：多轮消息输入、Conversation History 上下文、流式回复、`echo` Tool Loop、
-工具生命周期展示、错误展示和 Enter 发送。文件与 Shell 工具将在后续阶段逐步加入。
+当前最小 GUI 包含：多轮消息输入、Conversation History、流式回复、`echo` Tool Loop、
+只读 `exec_command`、工具生命周期展示和错误展示。`exec_command` 当前仅支持 macOS Seatbelt，
+写命令、交互进程和完整审批将在后续阶段加入。
 
 ## 交流与联系
 

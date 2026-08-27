@@ -27,11 +27,11 @@ func (EchoExecutor) Definition() Definition {
 }
 
 // Execute validates the JSON payload and returns its text field.
-func (EchoExecutor) Execute(_ context.Context, arguments json.RawMessage) (string, error) {
+func (EchoExecutor) Execute(_ context.Context, invocation Invocation) (string, error) {
 	var input struct {
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal(arguments, &input); err != nil {
+	if err := json.Unmarshal([]byte(invocation.Call.Arguments), &input); err != nil {
 		return "", errors.New("arguments must be valid JSON with a text field")
 	}
 	if strings.TrimSpace(input.Text) == "" {

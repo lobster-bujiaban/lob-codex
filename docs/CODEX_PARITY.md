@@ -18,8 +18,8 @@
 | 协议事件 | `codex-rs/protocol` | `internal/protocol` | 部分对齐 | 已拆分 `ResponseEvent` 与公开 `Event/EventMsg`，并实现 Message 类型的 `ResponseItem` 子集 |
 | Session/Turn | `codex-rs/core/src/session` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 Conversation History 的采样与回写主链 |
 | 模型客户端 | `codex-rs/core` 模型客户端 | `internal/model` | 部分对齐 | Responses API 现接收 `ResponseItem[]` 并消费文本 Delta、OutputItemDone、Completed；重试和其他 Item 类型尚未对齐 |
-| 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router 边界、echo 执行器、模型可见错误和结果回传 |
-| 命令执行 | `codex-rs/core/src/exec.rs` | `internal/execution` | 未开始 | 必须保留取消、超时、输出截断和沙箱边界 |
+| 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
+| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec` | `internal/tools/exec_command.go` | 原型 | 已实现 TurnEnvironment、只读策略、超时、输出截断和 macOS Seatbelt；审批、PTY 与进程续接未实现 |
 | MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
 | App Server | `codex-rs/app-server` | `internal/appserver` | 原型 | 服务现持有长生命周期 Session；线程路由和多会话协议尚未实现 |
 
@@ -69,16 +69,36 @@
 | 5 | 工具结果写回 History，并设置 `needs_follow_up` | FunctionCallOutput 写回 History，下一 Step 从完整历史继续采样 |
 | 6 | 客户端接收工具调用生命周期事件 | App Server 以 NDJSON 推送 started/completed，GUI 显示工具卡片 |
 
+## TurnEnvironment → Read-only exec_command
+
+![Codex unified exec 只读执行边界图](./images/unified-exec-readonly.png)
+
+可编辑源图位于 [`diagrams/unified-exec-readonly.svg`](./diagrams/unified-exec-readonly.svg)。
+
+Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文件读取通过
+`exec_command` 完成，外部 MCP Server 可以另外提供同名 filesystem 工具。LOB Codex 因此没有
+自行发明文件工具，而是实现 unified exec 的第一个安全切片。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | ToolInvocation 携带 Call、StepContext 与 TurnEnvironment | Invocation 携带 Call、WorkingDirectory 与 WorkspaceRoot |
+| 2 | Handler 解析 cmd/workdir/timeout 等参数 | ExecCommandExecutor 使用同名参数子集 |
+| 3 | ExecPolicy 决定允许、拒绝或申请审批 | 当前只读 allowlist 自动允许，其余返回“requires approval”模型结果 |
+| 4 | UnifiedExecRuntime 编排审批、Sandbox 与 ProcessManager | 当前直接进入 macOS Seatbelt，只读工作区且禁止写入和网络 |
+| 5 | ExecCommandToolOutput 截断后转 FunctionCallOutput | 返回 exit_code、wall_time_seconds、output 与截断标记 |
+
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
 - `ResponseItem` 当前实现文本 Message、FunctionCall 与 FunctionCallOutput；Reasoning、图片和音频内容尚未补齐。
 - Conversation History 尚未实现 Codex 的标准化、截断策略、token 统计、rollout 持久化与恢复。
-- Tool Router 当前只有无副作用的 echo，按顺序执行；并行工具、审批策略和沙箱尚未实现。
+- Tool Router 当前按顺序执行；并行工具尚未实现。
+- exec_command 仅覆盖同步完成的只读命令；没有 PTY、write_stdin、chunk/session ID 和完整 ExecPolicy。
+- Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
 - Codex 的 rollout 持久化、hooks、compaction、token 状态和启动预热尚未实现。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步
 
-继续扩展 Tool Router 的只读工具与执行上下文：加入 `read_file`、`list_files`，随后进入
-Approval 与 Sandbox，保持同一条 FunctionCallOutput 回写和 follow-up 采样主链。
+继续对齐 Approval 与 Sandbox：增加 ExecApprovalRequest/Response 公共事件和 GUI 审批交互，
+再把写命令接入审批后的 Seatbelt 执行。随后实现长进程 session ID 与 write_stdin。

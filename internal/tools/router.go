@@ -3,7 +3,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -26,10 +25,22 @@ type Call struct {
 	Arguments string
 }
 
+// Environment is the turn-scoped execution location captured for tool calls.
+type Environment struct {
+	WorkingDirectory string
+	WorkspaceRoot    string
+}
+
+// Invocation carries the call and turn environment into one tool executor.
+type Invocation struct {
+	Call        Call
+	Environment Environment
+}
+
 // Executor handles one registered function tool.
 type Executor interface {
 	Definition() Definition
-	Execute(context.Context, json.RawMessage) (string, error)
+	Execute(context.Context, Invocation) (string, error)
 }
 
 // Router owns the registry used both for model advertisement and execution.
@@ -37,18 +48,21 @@ type Router struct {
 	mu       sync.RWMutex
 	registry map[string]Executor
 	order    []string
+	env      Environment
 }
 
 // NewRouter creates an empty tool router.
-func NewRouter() *Router {
-	return &Router{registry: make(map[string]Executor)}
+func NewRouter(environment Environment) *Router {
+	return &Router{registry: make(map[string]Executor), env: environment}
 }
 
 // NewDefaultRouter creates the currently implemented Codex learning tool set.
-func NewDefaultRouter() *Router {
-	router := NewRouter()
-	if err := router.Register(EchoExecutor{}); err != nil {
-		panic(err)
+func NewDefaultRouter(environment Environment) *Router {
+	router := NewRouter(environment)
+	for _, executor := range []Executor{EchoExecutor{}, ExecCommandExecutor{}} {
+		if err := router.Register(executor); err != nil {
+			panic(err)
+		}
 	}
 	return router
 }
@@ -99,7 +113,7 @@ func (router *Router) Execute(ctx context.Context, call Call) protocol.ResponseI
 	if executor == nil {
 		return protocol.NewFunctionCallOutput(call.CallID, fmt.Sprintf("tool %q is not registered", call.Name))
 	}
-	output, err := executor.Execute(ctx, json.RawMessage(call.Arguments))
+	output, err := executor.Execute(ctx, Invocation{Call: call, Environment: router.env})
 	if err != nil {
 		output = fmt.Sprintf("tool %q failed: %v", call.Name, err)
 	}

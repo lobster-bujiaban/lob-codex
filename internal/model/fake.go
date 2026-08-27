@@ -27,7 +27,11 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 		if len(request.Input) > 0 {
 			last := request.Input[len(request.Input)-1]
 			if last.Type == "function_call_output" {
-				emitFakeText(ctx, events, "Fake model received echo result: "+last.Output)
+				toolName := "tool"
+				if len(request.Input) > 1 {
+					toolName = request.Input[len(request.Input)-2].Name
+				}
+				emitFakeText(ctx, events, "Fake model received "+toolName+" result: "+last.Output)
 				return
 			}
 		}
@@ -38,6 +42,20 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 				input = request.Input[index].Text()
 				break
 			}
+		}
+		if strings.Contains(input, "工作区") || strings.Contains(input, "列出文件") {
+			item := protocol.ResponseItem{
+				Type:      "function_call",
+				ID:        "fc_fake_exec",
+				CallID:    "call_fake_exec",
+				Name:      "exec_command",
+				Arguments: `{"cmd":"rg --files","max_output_tokens":1000}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
 		}
 		if strings.Contains(strings.ToLower(input), "echo") || strings.Contains(input, "回显") {
 			item := protocol.ResponseItem{

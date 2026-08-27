@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -50,7 +52,16 @@ func New(client model.Client) (*Session, *IO) {
 	submissions := make(chan Submission)
 	events := make(chan protocol.Event, 128)
 	done := make(chan struct{})
-	sess := &Session{client: client, events: events, ctx: ctx, cancel: cancel, tools: tools.NewDefaultRouter()}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		workingDirectory = "."
+	}
+	workingDirectory, err = filepath.Abs(workingDirectory)
+	if err != nil {
+		workingDirectory = "."
+	}
+	environment := tools.Environment{WorkingDirectory: workingDirectory, WorkspaceRoot: workingDirectory}
+	sess := &Session{client: client, events: events, ctx: ctx, cancel: cancel, tools: tools.NewDefaultRouter(environment)}
 	io := &IO{txSub: submissions, rxEvent: events, done: done}
 	go sess.submissionLoop(submissions, done)
 	return sess, io
