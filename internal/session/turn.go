@@ -113,7 +113,9 @@ func (s *Session) runSamplingRequest(
 						needsFollowUp = true
 					} else if call != nil {
 						s.sendEvent(stepContext.Turn, protocol.NewToolCallStarted(call.CallID, call.Name, call.Arguments))
-						toolOutput := stepContext.ToolRouter.Execute(ctx, *call)
+						toolOutput := stepContext.ToolRouter.Execute(ctx, *call, func(message protocol.EventMsg) {
+							s.sendEvent(stepContext.Turn, message)
+						})
 						s.history.RecordItems(toolOutput)
 						s.sendEvent(stepContext.Turn, protocol.NewToolCallCompleted(call.CallID, call.Name, toolOutput.Output))
 						needsFollowUp = true

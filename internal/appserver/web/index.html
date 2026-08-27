@@ -430,8 +430,34 @@
       header.append(name, status);
       row.append(header, argumentsView);
       messages.append(row);
-      toolCalls.set(event.call_id, { row, status });
+      toolCalls.set(event.call_id, { row, status, liveOutput: null });
       row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function appendExecDelta(toolCalls, event) {
+      const toolCall = toolCalls.get(event.call_id);
+      if (!toolCall) return;
+      if (!toolCall.liveOutput) {
+        toolCall.liveOutput = document.createElement('div');
+        toolCall.liveOutput.className = 'tool-call-output';
+        toolCall.liveOutput.textContent = '实时输出：\n';
+        toolCall.row.append(toolCall.liveOutput);
+      }
+      const bytes = Uint8Array.from(atob(event.chunk), (character) => character.charCodeAt(0));
+      const text = new TextDecoder().decode(bytes);
+      toolCall.liveOutput.textContent += `[${event.stream}] ${text}`;
+      toolCall.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function addTerminalInteraction(toolCalls, event) {
+      const toolCall = toolCalls.get(event.call_id);
+      if (!toolCall) return;
+      const interaction = document.createElement('div');
+      interaction.className = 'tool-call-output';
+      interaction.textContent = event.stdin
+        ? `终端输入 · Session ${event.process_id}：${JSON.stringify(event.stdin)}`
+        : `终端轮询 · Session ${event.process_id}`;
+      toolCall.row.append(interaction);
     }
 
     function completeToolCall(toolCalls, event) {
@@ -565,6 +591,10 @@
             addToolCall(toolCalls, event);
           } else if (event.type === 'tool_call_completed') {
             completeToolCall(toolCalls, event);
+          } else if (event.type === 'exec_command_output_delta') {
+            appendExecDelta(toolCalls, event);
+          } else if (event.type === 'terminal_interaction') {
+            addTerminalInteraction(toolCalls, event);
           } else if (event.type === 'exec_approval_request') {
             addApproval(event);
           } else if (event.type === 'error') {

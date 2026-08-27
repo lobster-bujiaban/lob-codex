@@ -49,5 +49,7 @@ func (executor WriteStdinExecutor) Execute(ctx context.Context, invocation Invoc
 		outputLimit = min(arguments.MaxOutputTokens*4, maxOutputBytes)
 	}
 	yield := clampYield(arguments.YieldTimeMS, arguments.Chars == "")
-	return executor.Manager.writeStdin(ctx, arguments.SessionID, arguments.Chars, yield, outputLimit)
+	return executor.Manager.writeStdin(
+		ctx, arguments.SessionID, arguments.Chars, yield, outputLimit, invocation.Emit,
+	)
 }

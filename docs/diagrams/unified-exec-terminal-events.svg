@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs><style>.title{font:700 36px system-ui;fill:#f8fafc}.sub{font:18px system-ui;fill:#9fb2cc}.head{font:700 20px system-ui;fill:#f8fafc}.text{font:16px system-ui;fill:#c8d5e8}.mono{font:700 15px ui-monospace;fill:#f8fafc}</style></defs>
+  <rect width="1400" height="900" fill="#0b223f"/><circle cx="1320" cy="50" r="180" fill="#f9733d" opacity=".08"/><circle cx="20" cy="860" r="250" fill="#38bdf8" opacity=".06"/>
+  <text x="70" y="72" class="title">UnifiedExec Terminal Lifecycle Events</text><text x="70" y="105" class="sub">运行输出和 stdin 交互先作为公开事件到达客户端，再完成工具结果回写</text>
+  <g transform="translate(70 155)"><rect width="360" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">1. Process output</text>
+    <rect x="24" y="82" width="312" height="150" rx="18" fill="#20466f" stroke="#38bdf8"/><text x="44" y="120" class="head">stdout / stderr / PTY</text><text x="44" y="160" class="mono">processOutputWriter</text><text x="44" y="197" class="text">读取字节并写入共享缓冲</text>
+    <rect x="24" y="272" width="312" height="160" rx="18" fill="#20466f" stroke="#f9733d"/><text x="44" y="312" class="head">Output Delta</text><text x="44" y="352" class="mono">call_id + stream + chunk</text><text x="44" y="390" class="text">实时发送给 Session 客户端</text></g>
+  <path d="M430 405H490" stroke="#f9733d" stroke-width="5"/><path d="M490 405l-25-15v30z" fill="#f9733d"/>
+  <g transform="translate(500 155)"><rect width="400" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">2. write_stdin interaction</text>
+    <rect x="24" y="82" width="352" height="150" rx="18" fill="#20466f" stroke="#2dd4bf"/><text x="44" y="120" class="head">Serialized transport</text><text x="44" y="160" class="mono">write → poll → process state</text><text x="44" y="197" class="text">interaction mutex 保证顺序</text>
+    <rect x="24" y="272" width="352" height="160" rx="18" fill="#20466f" stroke="#a78bfa"/><text x="44" y="312" class="head">TerminalInteraction</text><text x="44" y="352" class="mono">exec call_id + process_id + stdin</text><text x="44" y="390" class="text">非空输入或进程仍运行时发送</text></g>
+  <path d="M900 405H960" stroke="#f9733d" stroke-width="5"/><path d="M960 405l-25-15v30z" fill="#f9733d"/>
+  <g transform="translate(970 155)"><rect width="360" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">3. Tool result</text>
+    <rect x="24" y="82" width="312" height="150" rx="18" fill="#20466f" stroke="#38bdf8"/><text x="44" y="120" class="head">Collected output</text><text x="44" y="160" class="mono">new chunk_id per call</text><text x="44" y="197" class="text">增量游标只消费新输出</text>
+    <rect x="24" y="272" width="312" height="160" rx="18" fill="#20466f" stroke="#f9733d"/><text x="44" y="312" class="head">ToolCallCompleted</text><text x="44" y="352" class="mono">FunctionCallOutput</text><text x="44" y="390" class="text">回写 History，模型继续 Step</text></g>
+  <g transform="translate(70 720)"><rect width="1260" height="120" rx="22" fill="#fff8ee"/><text x="28" y="42" style="font:700 18px system-ui;fill:#173457">源码边界</text><text x="28" y="78" style="font:16px system-ui;fill:#34516f">write_stdin 不含 PTY resize 参数；Codex TUI resize 属于界面重排，不改变 unified exec 子进程窗口。</text></g>
+</svg>

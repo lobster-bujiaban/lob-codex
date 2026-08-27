@@ -53,11 +53,15 @@ type ApprovalRequest struct {
 // ApprovalReviewer emits a request and blocks until a decision or cancellation.
 type ApprovalReviewer func(context.Context, ApprovalRequest) (ApprovalDecision, error)
 
+// EventEmitter publishes tool-runtime lifecycle events through the owning Turn.
+type EventEmitter func(protocol.EventMsg)
+
 // Invocation carries the call and turn environment into one tool executor.
 type Invocation struct {
 	Call        Call
 	Environment Environment
 	Reviewer    ApprovalReviewer
+	Emit        EventEmitter
 }
 
 // Executor handles one registered function tool.
@@ -151,7 +155,7 @@ func (router *Router) BuildToolCall(item protocol.ResponseItem) (*Call, error) {
 }
 
 // Execute converts every routable failure into model-visible tool output.
-func (router *Router) Execute(ctx context.Context, call Call) protocol.ResponseItem {
+func (router *Router) Execute(ctx context.Context, call Call, emit EventEmitter) protocol.ResponseItem {
 	router.mu.RLock()
 	executor := router.registry[call.Name]
 	reviewer := router.reviewer
@@ -159,7 +163,9 @@ func (router *Router) Execute(ctx context.Context, call Call) protocol.ResponseI
 	if executor == nil {
 		return protocol.NewFunctionCallOutput(call.CallID, fmt.Sprintf("tool %q is not registered", call.Name))
 	}
-	output, err := executor.Execute(ctx, Invocation{Call: call, Environment: router.env, Reviewer: reviewer})
+	output, err := executor.Execute(ctx, Invocation{
+		Call: call, Environment: router.env, Reviewer: reviewer, Emit: emit,
+	})
 	if err != nil {
 		output = fmt.Sprintf("tool %q failed: %v", call.Name, err)
 	}

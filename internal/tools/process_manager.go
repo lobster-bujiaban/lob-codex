@@ -3,6 +3,8 @@ package tools
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
@@ -53,6 +56,8 @@ type managedProcess struct {
 	terminal   *os.File
 	tty        bool
 	policyRule string
+	callID     string
+	emit       EventEmitter
 	output     synchronizedBuffer
 	done       chan struct{}
 	startedAt  time.Time
@@ -60,6 +65,21 @@ type managedProcess struct {
 	interactionMu sync.Mutex
 	readOffset    int
 	exitCode      int
+}
+
+type processOutputWriter struct {
+	process *managedProcess
+	stream  string
+}
+
+func (writer processOutputWriter) Write(data []byte) (int, error) {
+	written, err := writer.process.output.Write(data)
+	if written > 0 && writer.process.emit != nil {
+		writer.process.emit(protocol.NewExecCommandOutputDelta(
+			writer.process.callID, writer.stream, data[:written],
+		))
+	}
+	return written, err
 }
 
 // ProcessManager owns running unified-exec processes for one Session.
@@ -76,14 +96,16 @@ func NewProcessManager() *ProcessManager {
 
 func (manager *ProcessManager) start(
 	command *exec.Cmd,
+	callID string,
 	tty bool,
 	yield time.Duration,
 	outputLimit int,
 	policyRule string,
+	emit EventEmitter,
 ) (string, error) {
 	process := &managedProcess{
 		command: command, done: make(chan struct{}), startedAt: time.Now(),
-		tty: tty, policyRule: policyRule,
+		tty: tty, policyRule: policyRule, callID: callID, emit: emit,
 	}
 	outputDone := make(chan struct{})
 	if tty {
@@ -94,7 +116,7 @@ func (manager *ProcessManager) start(
 		process.stdin = terminal
 		process.terminal = terminal
 		go func() {
-			_, _ = io.Copy(&process.output, terminal)
+			_, _ = io.Copy(processOutputWriter{process: process, stream: "stdout"}, terminal)
 			close(outputDone)
 		}()
 	} else {
@@ -103,8 +125,8 @@ func (manager *ProcessManager) start(
 			return "", fmt.Errorf("open command stdin: %w", err)
 		}
 		process.stdin = stdin
-		command.Stdout = &process.output
-		command.Stderr = &process.output
+		command.Stdout = processOutputWriter{process: process, stream: "stdout"}
+		command.Stderr = processOutputWriter{process: process, stream: "stderr"}
 		if err := command.Start(); err != nil {
 			return "", fmt.Errorf("start command: %w", err)
 		}
@@ -139,6 +161,7 @@ func (manager *ProcessManager) writeStdin(
 	chars string,
 	yield time.Duration,
 	outputLimit int,
+	emit EventEmitter,
 ) (string, error) {
 	manager.mu.Lock()
 	process := manager.processes[sessionID]
@@ -171,6 +194,11 @@ func (manager *ProcessManager) writeStdin(
 	}
 	finished := isClosed(process.done)
 	result := process.result(outputLimit, !finished)
+	if emit != nil && (chars != "" || !finished) {
+		emit(protocol.NewTerminalInteraction(
+			process.callID, fmt.Sprint(sessionID), chars,
+		))
+	}
 	if finished {
 		manager.remove(sessionID)
 	}
@@ -178,6 +206,7 @@ func (manager *ProcessManager) writeStdin(
 }
 
 type execResult struct {
+	ChunkID         string  `json:"chunk_id"`
 	SessionID       *int    `json:"session_id,omitempty"`
 	ExitCode        *int    `json:"exit_code,omitempty"`
 	WallTimeSeconds float64 `json:"wall_time_seconds"`
@@ -195,7 +224,7 @@ func (process *managedProcess) result(outputLimit int, running bool) execResult 
 		text = ansiEscapePattern.ReplaceAllString(strings.ReplaceAll(text, "\r\n", "\n"), "")
 	}
 	result := execResult{
-		WallTimeSeconds: time.Since(process.startedAt).Seconds(), Output: text,
+		ChunkID: generateChunkID(), WallTimeSeconds: time.Since(process.startedAt).Seconds(), Output: text,
 		OutputTruncated: truncated, TTY: process.tty, PolicyRule: process.policyRule,
 	}
 	if running {
@@ -204,6 +233,14 @@ func (process *managedProcess) result(outputLimit int, running bool) execResult 
 		result.ExitCode = &process.exitCode
 	}
 	return result
+}
+
+func generateChunkID() string {
+	var value [4]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return fmt.Sprintf("chunk_%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(value[:])
 }
 
 func encodeExecResult(result execResult) (string, error) {

@@ -115,7 +115,9 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 	if err != nil {
 		return "", err
 	}
-	return executor.Manager.start(command, arguments.TTY, yield, outputLimit, policyRule)
+	return executor.Manager.start(
+		command, invocation.Call.CallID, arguments.TTY, yield, outputLimit, policyRule, invocation.Emit,
+	)
 }
 
 func resolveWorkingDirectory(environment Environment, requested string) (string, error) {

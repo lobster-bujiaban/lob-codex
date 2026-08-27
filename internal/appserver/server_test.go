@@ -168,6 +168,9 @@ func TestChatContinuesLongRunningExecWithWriteStdin(t *testing.T) {
 	decoder := json.NewDecoder(response.Body)
 	var toolNames []string
 	var answer strings.Builder
+	var outputDeltas strings.Builder
+	sawTerminalInteraction := false
+	sawChunkID := false
 	for {
 		var event struct {
 			Type   string `json:"type"`
@@ -175,6 +178,9 @@ func TestChatContinuesLongRunningExecWithWriteStdin(t *testing.T) {
 			CallID string `json:"call_id"`
 			TurnID string `json:"turn_id"`
 			Name   string `json:"name"`
+			Output string `json:"output"`
+			Chunk  []byte `json:"chunk"`
+			Stdin  string `json:"stdin"`
 		}
 		if err := decoder.Decode(&event); err == io.EOF {
 			break
@@ -195,6 +201,20 @@ func TestChatContinuesLongRunningExecWithWriteStdin(t *testing.T) {
 		if event.Type == "tool_call_started" {
 			toolNames = append(toolNames, event.Name)
 		}
+		if event.Type == "exec_command_output_delta" {
+			outputDeltas.Write(event.Chunk)
+		}
+		if event.Type == "terminal_interaction" && event.Stdin == "hello\n" {
+			sawTerminalInteraction = true
+		}
+		if event.Type == "tool_call_completed" {
+			var output struct {
+				ChunkID string `json:"chunk_id"`
+			}
+			if json.Unmarshal([]byte(event.Output), &output) == nil && output.ChunkID != "" {
+				sawChunkID = true
+			}
+		}
 		answer.WriteString(event.Delta)
 	}
 	if got, want := strings.Join(toolNames, ","), "exec_command,write_stdin"; got != want {
@@ -202,6 +222,13 @@ func TestChatContinuesLongRunningExecWithWriteStdin(t *testing.T) {
 	}
 	if !strings.Contains(answer.String(), "process-done") {
 		t.Fatalf("answer = %q, want process-done", answer.String())
+	}
+	sawOutputDelta := strings.Contains(outputDeltas.String(), "process-done")
+	if !sawOutputDelta || !sawTerminalInteraction || !sawChunkID {
+		t.Fatalf(
+			"lifecycle events: output delta=%t terminal interaction=%t chunk id=%t",
+			sawOutputDelta, sawTerminalInteraction, sawChunkID,
+		)
 	}
 }
 

@@ -14,10 +14,26 @@ type EventMsg struct {
 	AgentMessageContentDelta *AgentMessageContentDeltaEvent `json:"agent_message_content_delta,omitempty"`
 	ToolCallStarted          *ToolCallStartedEvent          `json:"tool_call_started,omitempty"`
 	ToolCallCompleted        *ToolCallCompletedEvent        `json:"tool_call_completed,omitempty"`
+	ExecCommandOutputDelta   *ExecCommandOutputDeltaEvent   `json:"exec_command_output_delta,omitempty"`
+	TerminalInteraction      *TerminalInteractionEvent      `json:"terminal_interaction,omitempty"`
 	ExecApprovalRequest      *ExecApprovalRequestEvent      `json:"exec_approval_request,omitempty"`
 	TurnComplete             *TurnCompleteEvent             `json:"turn_complete,omitempty"`
 	TurnAborted              *TurnAbortedEvent              `json:"turn_aborted,omitempty"`
 	Error                    *ErrorEvent                    `json:"error,omitempty"`
+}
+
+// ExecCommandOutputDeltaEvent carries one stdout or stderr chunk while a command runs.
+type ExecCommandOutputDeltaEvent struct {
+	CallID string `json:"call_id"`
+	Stream string `json:"stream"`
+	Chunk  []byte `json:"chunk"`
+}
+
+// TerminalInteractionEvent records stdin transport for an existing exec session.
+type TerminalInteractionEvent struct {
+	CallID    string `json:"call_id"`
+	ProcessID string `json:"process_id"`
+	Stdin     string `json:"stdin"`
 }
 
 // ExecApprovalRequestEvent asks the client to review one command invocation.
@@ -105,6 +121,24 @@ func NewToolCallCompleted(callID, name, output string) EventMsg {
 	return EventMsg{
 		Type:              "tool_call_completed",
 		ToolCallCompleted: &ToolCallCompletedEvent{CallID: callID, Name: name, Output: output},
+	}
+}
+
+func NewExecCommandOutputDelta(callID, stream string, chunk []byte) EventMsg {
+	return EventMsg{
+		Type: "exec_command_output_delta",
+		ExecCommandOutputDelta: &ExecCommandOutputDeltaEvent{
+			CallID: callID, Stream: stream, Chunk: append([]byte(nil), chunk...),
+		},
+	}
+}
+
+func NewTerminalInteraction(callID, processID, stdin string) EventMsg {
+	return EventMsg{
+		Type: "terminal_interaction",
+		TerminalInteraction: &TerminalInteractionEvent{
+			CallID: callID, ProcessID: processID, Stdin: stdin,
+		},
 	}
 }
 

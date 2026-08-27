@@ -40,6 +40,10 @@ type chatStreamEvent struct {
 	CWD            string   `json:"cwd,omitempty"`
 	Reason         string   `json:"reason,omitempty"`
 	ProposedPrefix []string `json:"proposed_prefix_rule,omitempty"`
+	Stream         string   `json:"stream,omitempty"`
+	Chunk          []byte   `json:"chunk,omitempty"`
+	ProcessID      string   `json:"process_id,omitempty"`
+	Stdin          string   `json:"stdin,omitempty"`
 }
 
 // NewHandler creates the GUI and chat API using one long-lived model session.
@@ -176,6 +180,24 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 				Type: "exec_approval_request", CallID: approval.CallID, TurnID: approval.TurnID,
 				Command: approval.Command, CWD: approval.CWD, Reason: approval.Reason,
 				ProposedPrefix: approval.ProposedPrefix,
+			}); err != nil {
+				return wrote, err
+			}
+			wrote = true
+		case "exec_command_output_delta":
+			delta := event.Msg.ExecCommandOutputDelta
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type: "exec_command_output_delta", CallID: delta.CallID,
+				Stream: delta.Stream, Chunk: delta.Chunk,
+			}); err != nil {
+				return wrote, err
+			}
+			wrote = true
+		case "terminal_interaction":
+			interaction := event.Msg.TerminalInteraction
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type: "terminal_interaction", CallID: interaction.CallID,
+				ProcessID: interaction.ProcessID, Stdin: interaction.Stdin,
 			}); err != nil {
 				return wrote, err
 			}

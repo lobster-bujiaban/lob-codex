@@ -89,6 +89,8 @@ go run ./cmd/lob-codex
 Seatbelt，并支持普通管道/PTY 长进程、`session_id`、`write_stdin`、Ctrl-C、
 `approved_for_session`、`approved_with_amendment` 与 argv `prefix_rule`。选择“始终允许”后，
 规则写入项目 `tmp/exec-policy.rules`，重启 Session 后仍然有效；`tmp/` 中的运行数据由 Git 忽略。
+命令运行期间会推送 `exec_command_output_delta`，stdin 写入或轮询会推送
+`terminal_interaction`，每次命令结果携带独立 `chunk_id`。
 
 ## 交流与联系
 
