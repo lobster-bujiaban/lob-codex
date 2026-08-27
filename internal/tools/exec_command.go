@@ -59,12 +59,28 @@ func (ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (
 	if err := json.Unmarshal([]byte(invocation.Call.Arguments), &arguments); err != nil {
 		return "", errors.New("arguments must be valid exec_command JSON")
 	}
-	if err := validateReadOnlyCommand(arguments.Command); err != nil {
-		return "", err
-	}
 	workingDirectory, err := resolveWorkingDirectory(invocation.Environment, arguments.WorkingDir)
 	if err != nil {
 		return "", err
+	}
+	approved := false
+	if reason := approvalReason(arguments.Command); reason != "" {
+		if invocation.Reviewer == nil {
+			return "", errors.New("command requires approval, but no approval reviewer is connected")
+		}
+		decision, err := invocation.Reviewer(ctx, ApprovalRequest{
+			CallID:           invocation.Call.CallID,
+			Command:          arguments.Command,
+			WorkingDirectory: workingDirectory,
+			Reason:           reason,
+		})
+		if err != nil {
+			return "", err
+		}
+		if decision != ApprovalApproved {
+			return "command execution denied by user", nil
+		}
+		approved = true
 	}
 
 	timeout := defaultExecTimeout
@@ -81,7 +97,7 @@ func (ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (
 
 	commandContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	command, err := sandboxedCommand(commandContext, invocation.Environment.WorkspaceRoot, workingDirectory, arguments.Command)
+	command, err := sandboxedCommand(commandContext, invocation.Environment.WorkspaceRoot, workingDirectory, arguments.Command, approved)
 	if err != nil {
 		return "", err
 	}
@@ -118,25 +134,25 @@ func (ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (
 	return string(encoded), nil
 }
 
-func validateReadOnlyCommand(command string) error {
+func approvalReason(command string) string {
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return errors.New("cmd must not be empty")
+		return "empty commands cannot be executed"
 	}
 	if strings.ContainsAny(command, ";|&><\n\r`") || strings.Contains(command, "$(") {
-		return errors.New("command requires approval: shell operators are not allowed by the read-only policy")
+		return "shell operators are outside the automatic read-only policy"
 	}
 	fields := strings.Fields(command)
 	if len(fields) == 0 || !slices.Contains(readOnlyCommands, filepath.Base(fields[0])) {
-		return fmt.Errorf("command requires approval: %q is not in the read-only policy", fields[0])
+		return fmt.Sprintf("%q is not in the automatic read-only policy", fields[0])
 	}
 	for _, field := range fields[1:] {
 		trimmed := strings.Trim(field, "'\"")
 		if filepath.IsAbs(trimmed) || trimmed == ".." || strings.HasPrefix(trimmed, "../") || strings.Contains(trimmed, "/../") {
-			return errors.New("command requires approval: paths must stay relative to the workspace")
+			return "the command references a path outside the workspace"
 		}
 	}
-	return nil
+	return ""
 }
 
 func resolveWorkingDirectory(environment Environment, requested string) (string, error) {
@@ -158,9 +174,13 @@ func resolveWorkingDirectory(environment Environment, requested string) (string,
 	return workingDirectory, nil
 }
 
-func sandboxedCommand(ctx context.Context, workspaceRoot, workingDirectory, command string) (*exec.Cmd, error) {
+func sandboxedCommand(ctx context.Context, workspaceRoot, workingDirectory, command string, approved bool) (*exec.Cmd, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, errors.New("read-only exec sandbox is currently implemented for macOS only")
+	}
+	writeRule := ""
+	if approved {
+		writeRule = fmt.Sprintf("\n(allow file-write* (subpath %q))", workspaceRoot)
 	}
 	profile := fmt.Sprintf(`(version 1)
 (deny default)
@@ -169,7 +189,7 @@ func sandboxedCommand(ctx context.Context, workspaceRoot, workingDirectory, comm
 (allow process-fork)
 (allow signal (target self))
 (allow sysctl-read)
-(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/Library") (subpath %q))`, workspaceRoot)
+(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/Library") (subpath %q))%s`, workspaceRoot, writeRule)
 	cmd := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", "-p", profile, "/bin/zsh", "-c", command)
 	cmd.Dir = workingDirectory
 	return cmd, nil

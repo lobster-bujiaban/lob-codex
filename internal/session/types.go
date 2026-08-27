@@ -10,14 +10,23 @@ import (
 type OpType string
 
 const (
-	OpTurnInput OpType = "turn_input"
-	OpShutdown  OpType = "shutdown"
+	OpTurnInput    OpType = "turn_input"
+	OpExecApproval OpType = "exec_approval"
+	OpShutdown     OpType = "shutdown"
 )
 
 // Op is the subset of Codex session operations implemented by the current port.
 type Op struct {
-	Type  OpType
-	Input []TurnInput
+	Type     OpType
+	Input    []TurnInput
+	Approval *ExecApprovalResponse
+}
+
+// ExecApprovalResponse carries a client decision back to a waiting tool call.
+type ExecApprovalResponse struct {
+	CallID   string
+	TurnID   string
+	Decision tools.ApprovalDecision
 }
 
 // TurnInput is model-visible input reserved for one turn.

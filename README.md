@@ -85,8 +85,8 @@ go run ./cmd/lob-codex
 程序启动时会自动读取当前目录的 `.env`，已有系统环境变量优先级更高。
 
 当前最小 GUI 包含：多轮消息输入、Conversation History、流式回复、`echo` Tool Loop、
-只读 `exec_command`、工具生命周期展示和错误展示。`exec_command` 当前仅支持 macOS Seatbelt，
-写命令、交互进程和完整审批将在后续阶段加入。
+`exec_command`、批准一次/拒绝、工具生命周期展示和错误展示。命令执行当前仅支持 macOS
+Seatbelt；交互进程、永久批准规则和完整 ExecPolicy 将在后续阶段加入。
 
 ## 交流与联系
 

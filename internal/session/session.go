@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -25,6 +26,9 @@ type Session struct {
 	cancel  context.CancelFunc
 	history ConversationHistory
 	tools   *tools.Router
+
+	approvalMu sync.Mutex
+	approvals  map[string]pendingApproval
 
 	activeMu sync.Mutex
 	active   *runningTask
@@ -41,9 +45,15 @@ type IO struct {
 type runningTask struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	turnID string
 
 	mu          sync.Mutex
 	abortReason string
+}
+
+type pendingApproval struct {
+	turnID string
+	result chan tools.ApprovalDecision
 }
 
 // New creates a session and starts the long-running submission loop.
@@ -61,7 +71,11 @@ func New(client model.Client) (*Session, *IO) {
 		workingDirectory = "."
 	}
 	environment := tools.Environment{WorkingDirectory: workingDirectory, WorkspaceRoot: workingDirectory}
-	sess := &Session{client: client, events: events, ctx: ctx, cancel: cancel, tools: tools.NewDefaultRouter(environment)}
+	sess := &Session{
+		client: client, events: events, ctx: ctx, cancel: cancel,
+		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
+	}
+	sess.tools.SetApprovalReviewer(sess.requestCommandApproval)
 	io := &IO{txSub: submissions, rxEvent: events, done: done}
 	go sess.submissionLoop(submissions, done)
 	return sess, io
@@ -87,6 +101,12 @@ func (io *IO) Submit(ctx context.Context, op Op) (string, error) {
 // SubmitTurnInput starts the StartOrSteer path with one text input.
 func (io *IO) SubmitTurnInput(ctx context.Context, text string) (string, error) {
 	return io.Submit(ctx, Op{Type: OpTurnInput, Input: []TurnInput{{Text: text}}})
+}
+
+// RespondExecApproval delivers a client decision through the submission loop.
+func (io *IO) RespondExecApproval(ctx context.Context, response ExecApprovalResponse) error {
+	_, err := io.Submit(ctx, Op{Type: OpExecApproval, Approval: &response})
+	return err
 }
 
 // NextEvent waits for the next public session event.
@@ -128,6 +148,8 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 		switch submission.Op.Type {
 		case OpTurnInput:
 			s.handleTurnInput(submission)
+		case OpExecApproval:
+			s.handleExecApproval(submission)
 		case OpShutdown:
 			s.abortActive("shutdown")
 			return
@@ -139,6 +161,58 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 		}
 	}
 	s.abortActive("session channel closed")
+}
+
+func (s *Session) requestCommandApproval(ctx context.Context, request tools.ApprovalRequest) (tools.ApprovalDecision, error) {
+	turnID := s.activeTurnID()
+	result := make(chan tools.ApprovalDecision, 1)
+	s.approvalMu.Lock()
+	s.approvals[request.CallID] = pendingApproval{turnID: turnID, result: result}
+	s.approvalMu.Unlock()
+	defer func() {
+		s.approvalMu.Lock()
+		delete(s.approvals, request.CallID)
+		s.approvalMu.Unlock()
+	}()
+	s.sendEventRaw(protocol.Event{
+		ID: turnID,
+		Msg: protocol.NewExecApprovalRequest(
+			request.CallID, turnID, request.Command, request.WorkingDirectory,
+			request.Reason, time.Now().UnixMilli(),
+		),
+	})
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case decision := <-result:
+		return decision, nil
+	}
+}
+
+func (s *Session) activeTurnID() string {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	if s.active == nil {
+		return ""
+	}
+	return s.active.turnID
+}
+
+func (s *Session) handleExecApproval(submission Submission) {
+	if submission.Op.Approval == nil {
+		return
+	}
+	response := submission.Op.Approval
+	s.approvalMu.Lock()
+	pending, ok := s.approvals[response.CallID]
+	s.approvalMu.Unlock()
+	if !ok || pending.turnID != response.TurnID {
+		return
+	}
+	select {
+	case pending.result <- response.Decision:
+	default:
+	}
 }
 
 func (s *Session) handleTurnInput(submission Submission) {

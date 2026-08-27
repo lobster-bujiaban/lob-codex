@@ -31,10 +31,30 @@ type Environment struct {
 	WorkspaceRoot    string
 }
 
+// ApprovalDecision is the subset of Codex review decisions implemented now.
+type ApprovalDecision string
+
+const (
+	ApprovalApproved ApprovalDecision = "approved"
+	ApprovalDenied   ApprovalDecision = "denied"
+)
+
+// ApprovalRequest describes one command waiting for user review.
+type ApprovalRequest struct {
+	CallID           string
+	Command          string
+	WorkingDirectory string
+	Reason           string
+}
+
+// ApprovalReviewer emits a request and blocks until a decision or cancellation.
+type ApprovalReviewer func(context.Context, ApprovalRequest) (ApprovalDecision, error)
+
 // Invocation carries the call and turn environment into one tool executor.
 type Invocation struct {
 	Call        Call
 	Environment Environment
+	Reviewer    ApprovalReviewer
 }
 
 // Executor handles one registered function tool.
@@ -49,6 +69,14 @@ type Router struct {
 	registry map[string]Executor
 	order    []string
 	env      Environment
+	reviewer ApprovalReviewer
+}
+
+// SetApprovalReviewer connects tool execution to the owning Session.
+func (router *Router) SetApprovalReviewer(reviewer ApprovalReviewer) {
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	router.reviewer = reviewer
 }
 
 // NewRouter creates an empty tool router.
@@ -109,11 +137,12 @@ func (router *Router) BuildToolCall(item protocol.ResponseItem) (*Call, error) {
 func (router *Router) Execute(ctx context.Context, call Call) protocol.ResponseItem {
 	router.mu.RLock()
 	executor := router.registry[call.Name]
+	reviewer := router.reviewer
 	router.mu.RUnlock()
 	if executor == nil {
 		return protocol.NewFunctionCallOutput(call.CallID, fmt.Sprintf("tool %q is not registered", call.Name))
 	}
-	output, err := executor.Execute(ctx, Invocation{Call: call, Environment: router.env})
+	output, err := executor.Execute(ctx, Invocation{Call: call, Environment: router.env, Reviewer: reviewer})
 	if err != nil {
 		output = fmt.Sprintf("tool %q failed: %v", call.Name, err)
 	}

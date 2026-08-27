@@ -154,6 +154,15 @@
     .tool-call.completed .tool-call-status { color: var(--green); }
     .tool-call pre { overflow-x: auto; margin: 8px 0 0; color: #53627a; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
     .tool-call-output { margin-top: 9px; padding-top: 9px; border-top: 1px solid #e4e0f2; font-size: 12px; }
+    .approval-card { align-self: flex-start; width: min(620px, 90%); padding: 16px; border: 1px solid #efb99f; border-radius: 16px; background: #fff8ee; animation: enter .22s ease both; }
+    .approval-card h3 { margin: 0; color: var(--orange-dark); font-size: 14px; }
+    .approval-card p { margin: 5px 0 10px; color: var(--muted); font-size: 11px; }
+    .approval-card pre { overflow-x: auto; margin: 0; padding: 10px; border-radius: 10px; background: #172d4f; color: #fff; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .approval-actions button { padding: 7px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; }
+    .approval-actions .approve { border-color: var(--orange); background: var(--orange); color: #fff; }
+    .approval-actions button:disabled { opacity: .55; cursor: default; }
+    .approval-result { margin-top: 10px; color: var(--muted); font-size: 11px; }
     .typing::after { content: ""; display: inline-block; width: 5px; height: 14px; margin-left: 4px; background: var(--orange); vertical-align: -2px; animation: blink .7s infinite alternate; }
     @keyframes enter { from { opacity: 0; transform: translateY(7px); } }
     @keyframes blink { to { opacity: .15; } }
@@ -321,7 +330,7 @@
         title: '能执行，不等于可以直接执行',
         description: '理解工具调用如何经过审批策略与沙箱边界，再安全地落到真实工作区。',
         prompts: [
-          ['审批边界', '什么时候需要用户批准', 'Codex 如何判断一个工具调用是否需要向用户申请批准？'],
+          ['运行演示', '发起一次命令审批', '请执行审批演示，调用 exec_command 运行“pwd; echo approval-demo”，等待我批准或拒绝后再解释结果。'],
           ['隔离执行', 'Sandbox 保护了什么', 'Codex 的 Sandbox 在命令执行过程中主要限制哪些能力？'],
           ['失败语义', '拒绝后如何继续', '当用户拒绝审批或沙箱阻止命令时，结果如何反馈给模型继续推理？']
         ]
@@ -436,6 +445,52 @@
       toolCall.row.append(output);
     }
 
+    function addApproval(event) {
+      const card = document.createElement('div');
+      card.className = 'approval-card';
+      const title = document.createElement('h3');
+      title.textContent = '需要批准执行命令';
+      const reason = document.createElement('p');
+      reason.textContent = `${event.reason || '该命令不在自动允许策略中'} · ${event.cwd}`;
+      const command = document.createElement('pre');
+      command.textContent = event.command.join(' ');
+      const actions = document.createElement('div');
+      actions.className = 'approval-actions';
+      const approve = document.createElement('button');
+      approve.className = 'approve';
+      approve.type = 'button';
+      approve.textContent = '批准一次';
+      const deny = document.createElement('button');
+      deny.type = 'button';
+      deny.textContent = '拒绝';
+      const result = document.createElement('div');
+      result.className = 'approval-result';
+      const respond = async (decision) => {
+        approve.disabled = true;
+        deny.disabled = true;
+        result.textContent = '正在提交决定…';
+        try {
+          const response = await fetch(`/api/approvals/${encodeURIComponent(event.call_id)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ turn_id: event.turn_id, decision })
+          });
+          if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+          result.textContent = decision === 'approved' ? '已批准一次，命令继续执行' : '已拒绝，结果将返回模型';
+        } catch (error) {
+          approve.disabled = false;
+          deny.disabled = false;
+          result.textContent = `提交失败：${error.message}`;
+        }
+      };
+      approve.addEventListener('click', () => respond('approved'));
+      deny.addEventListener('click', () => respond('denied'));
+      actions.append(approve, deny);
+      card.append(title, reason, command, actions, result);
+      messages.append(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
     async function submitPrompt(text) {
       if (!text || send.disabled) return;
       const request = new AbortController();
@@ -471,6 +526,8 @@
             addToolCall(toolCalls, event);
           } else if (event.type === 'tool_call_completed') {
             completeToolCall(toolCalls, event);
+          } else if (event.type === 'exec_approval_request') {
+            addApproval(event);
           } else if (event.type === 'error') {
             throw new Error(event.message);
           }

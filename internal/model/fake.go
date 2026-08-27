@@ -43,6 +43,17 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 				break
 			}
 		}
+		if strings.Contains(input, "审批演示") {
+			item := protocol.ResponseItem{
+				Type: "function_call", ID: "fc_fake_approval", CallID: "call_fake_approval",
+				Name: "exec_command", Arguments: `{"cmd":"pwd; echo approval-demo"}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
+		}
 		if strings.Contains(input, "工作区") || strings.Contains(input, "列出文件") {
 			item := protocol.ResponseItem{
 				Type:      "function_call",

@@ -14,6 +14,7 @@ import (
 
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/session"
+	"github.com/lobster-bujiaban/lob-codex/internal/tools"
 )
 
 //go:embed web/*
@@ -27,13 +28,17 @@ type Handler struct {
 }
 
 type chatStreamEvent struct {
-	Type      string `json:"type"`
-	Delta     string `json:"delta,omitempty"`
-	CallID    string `json:"call_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-	Output    string `json:"output,omitempty"`
-	Message   string `json:"message,omitempty"`
+	Type      string   `json:"type"`
+	Delta     string   `json:"delta,omitempty"`
+	CallID    string   `json:"call_id,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Arguments string   `json:"arguments,omitempty"`
+	Output    string   `json:"output,omitempty"`
+	Message   string   `json:"message,omitempty"`
+	TurnID    string   `json:"turn_id,omitempty"`
+	Command   []string `json:"command,omitempty"`
+	CWD       string   `json:"cwd,omitempty"`
+	Reason    string   `json:"reason,omitempty"`
 }
 
 // NewHandler creates the GUI and chat API using one long-lived model session.
@@ -41,6 +46,7 @@ func NewHandler(client model.Client) *Handler {
 	_, sessionIO := session.New(client)
 	handler := &Handler{mux: http.NewServeMux(), sessionIO: sessionIO}
 	handler.mux.HandleFunc("POST /api/chat", handler.chat)
+	handler.mux.HandleFunc("POST /api/approvals/{callID}", handler.respondApproval)
 
 	staticFiles, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -48,6 +54,29 @@ func NewHandler(client model.Client) *Handler {
 	}
 	handler.mux.Handle("GET /", http.FileServer(http.FS(staticFiles)))
 	return handler
+}
+
+func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		TurnID   string                 `json:"turn_id"`
+		Decision tools.ApprovalDecision `json:"decision"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16<<10)).Decode(&input); err != nil {
+		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
+		return
+	}
+	if input.Decision != tools.ApprovalApproved && input.Decision != tools.ApprovalDenied {
+		http.Error(writer, "decision must be approved or denied", http.StatusBadRequest)
+		return
+	}
+	response := session.ExecApprovalResponse{
+		CallID: request.PathValue("callID"), TurnID: input.TurnID, Decision: input.Decision,
+	}
+	if err := h.sessionIO.RespondExecApproval(request.Context(), response); err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 // ServeHTTP implements http.Handler.
@@ -133,6 +162,15 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 				CallID: toolCall.CallID,
 				Name:   toolCall.Name,
 				Output: toolCall.Output,
+			}); err != nil {
+				return wrote, err
+			}
+			wrote = true
+		case "exec_approval_request":
+			approval := event.Msg.ExecApprovalRequest
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type: "exec_approval_request", CallID: approval.CallID, TurnID: approval.TurnID,
+				Command: approval.Command, CWD: approval.CWD, Reason: approval.Reason,
 			}); err != nil {
 				return wrote, err
 			}

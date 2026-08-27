@@ -14,9 +14,21 @@ type EventMsg struct {
 	AgentMessageContentDelta *AgentMessageContentDeltaEvent `json:"agent_message_content_delta,omitempty"`
 	ToolCallStarted          *ToolCallStartedEvent          `json:"tool_call_started,omitempty"`
 	ToolCallCompleted        *ToolCallCompletedEvent        `json:"tool_call_completed,omitempty"`
+	ExecApprovalRequest      *ExecApprovalRequestEvent      `json:"exec_approval_request,omitempty"`
 	TurnComplete             *TurnCompleteEvent             `json:"turn_complete,omitempty"`
 	TurnAborted              *TurnAbortedEvent              `json:"turn_aborted,omitempty"`
 	Error                    *ErrorEvent                    `json:"error,omitempty"`
+}
+
+// ExecApprovalRequestEvent asks the client to review one command invocation.
+type ExecApprovalRequestEvent struct {
+	CallID             string   `json:"call_id"`
+	TurnID             string   `json:"turn_id"`
+	StartedAtMS        int64    `json:"started_at_ms"`
+	Command            []string `json:"command"`
+	CWD                string   `json:"cwd"`
+	Reason             string   `json:"reason,omitempty"`
+	AvailableDecisions []string `json:"available_decisions"`
 }
 
 // ToolCallStartedEvent exposes a routed model tool invocation to clients.
@@ -92,6 +104,17 @@ func NewToolCallCompleted(callID, name, output string) EventMsg {
 	return EventMsg{
 		Type:              "tool_call_completed",
 		ToolCallCompleted: &ToolCallCompletedEvent{CallID: callID, Name: name, Output: output},
+	}
+}
+
+func NewExecApprovalRequest(callID, turnID, command, cwd, reason string, startedAtMS int64) EventMsg {
+	return EventMsg{
+		Type: "exec_approval_request",
+		ExecApprovalRequest: &ExecApprovalRequestEvent{
+			CallID: callID, TurnID: turnID, StartedAtMS: startedAtMS,
+			Command: []string{command}, CWD: cwd, Reason: reason,
+			AvailableDecisions: []string{"approved", "denied"},
+		},
 	}
 }
 
