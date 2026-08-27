@@ -25,6 +25,7 @@ type Session struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	history ConversationHistory
+	rollout *rolloutRecorder
 	tools   *tools.Router
 
 	approvalMu sync.Mutex
@@ -71,6 +72,11 @@ func New(client model.Client) (*Session, *IO) {
 
 // NewInWorkspace creates a Session whose tool environment is rooted at one directory.
 func NewInWorkspace(client model.Client, workspaceRoot string) (*Session, *IO, error) {
+	return NewInWorkspaceWithRollout(client, workspaceRoot, "")
+}
+
+// NewInWorkspaceWithRollout creates or resumes a Session from one canonical rollout.
+func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath string) (*Session, *IO, error) {
 	workspaceRoot, err := filepath.Abs(workspaceRoot)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve workspace root: %w", err)
@@ -94,6 +100,15 @@ func NewInWorkspace(client model.Client, workspaceRoot string) (*Session, *IO, e
 	sess := &Session{
 		client: client, events: events, ctx: ctx, cancel: cancel,
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
+	}
+	if rolloutPath != "" {
+		recorder, initialHistory, err := openRollout(rolloutPath)
+		if err != nil {
+			cancel()
+			return nil, nil, err
+		}
+		sess.rollout = recorder
+		sess.history.Restore(initialHistory)
 	}
 	sess.tools.SetApprovalReviewer(sess.requestCommandApproval)
 	io := &IO{txSub: submissions, rxEvent: events, done: done}
@@ -120,7 +135,12 @@ func (io *IO) Submit(ctx context.Context, op Op) (string, error) {
 
 // SubmitTurnInput starts the StartOrSteer path with one text input.
 func (io *IO) SubmitTurnInput(ctx context.Context, text string) (string, error) {
-	return io.Submit(ctx, Op{Type: OpTurnInput, Input: []TurnInput{{Text: text}}})
+	return io.SubmitTurnInputWithImages(ctx, text, nil)
+}
+
+// SubmitTurnInputWithImages starts a turn containing text and clipboard image data URLs.
+func (io *IO) SubmitTurnInputWithImages(ctx context.Context, text string, imageURLs []string) (string, error) {
+	return io.Submit(ctx, Op{Type: OpTurnInput, Input: []TurnInput{{Text: text, ImageURLs: imageURLs}}})
 }
 
 // RespondExecApproval delivers a client decision through the submission loop.
@@ -164,6 +184,7 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 	defer close(s.events)
 	defer s.cancel()
 	defer s.tools.Close()
+	defer s.rollout.close()
 
 	for submission := range submissions {
 		switch submission.Op.Type {
@@ -182,6 +203,11 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 		}
 	}
 	s.abortActive("session channel closed")
+}
+
+func (s *Session) recordConversationItems(items ...protocol.ResponseItem) {
+	s.history.RecordItems(items...)
+	s.rollout.record(items...)
 }
 
 func (s *Session) requestCommandApproval(ctx context.Context, request tools.ApprovalRequest) (tools.ApprovalDecision, error) {
@@ -237,8 +263,8 @@ func (s *Session) handleExecApproval(submission Submission) {
 }
 
 func (s *Session) handleTurnInput(submission Submission) {
-	if len(submission.Op.Input) != 1 || ValidateInput(submission.Op.Input[0].Text) != nil {
-		s.sendEventRaw(protocol.Event{ID: submission.ID, Msg: protocol.NewError("prompt must not be empty")})
+	if len(submission.Op.Input) != 1 || ValidateTurnInput(submission.Op.Input[0]) != nil {
+		s.sendEventRaw(protocol.Event{ID: submission.ID, Msg: protocol.NewError("prompt or image is required")})
 		return
 	}
 	turnContext := &TurnContext{SubID: submission.ID}
@@ -249,6 +275,14 @@ func (s *Session) handleTurnInput(submission Submission) {
 func ValidateInput(input string) error {
 	if strings.TrimSpace(input) == "" {
 		return errors.New("prompt must not be empty")
+	}
+	return nil
+}
+
+// ValidateTurnInput accepts an image-only turn while retaining text validation.
+func ValidateTurnInput(input TurnInput) error {
+	if strings.TrimSpace(input.Text) == "" && len(input.ImageURLs) == 0 {
+		return errors.New("prompt or image is required")
 	}
 	return nil
 }

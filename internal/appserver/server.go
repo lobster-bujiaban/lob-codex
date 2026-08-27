@@ -88,6 +88,7 @@ func NewHandler(client model.Client) *Handler {
 	handler.mux.HandleFunc("POST /api/approvals/{callID}", handler.respondApproval)
 	handler.mux.HandleFunc("GET /api/threads", handler.listThreads)
 	handler.mux.HandleFunc("POST /api/threads", handler.startThread)
+	handler.mux.HandleFunc("GET /api/threads/{threadID}/history", handler.threadHistory)
 	handler.mux.HandleFunc("POST /api/workspaces/select", handler.selectWorkspace)
 
 	staticFiles, err := fs.Sub(webFiles, "web")
@@ -163,16 +164,21 @@ func (h *Handler) Close(ctx context.Context) error {
 
 func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
-		Prompt   string `json:"prompt"`
-		ThreadID string `json:"thread_id"`
+		Prompt    string   `json:"prompt"`
+		ThreadID  string   `json:"thread_id"`
+		ImageURLs []string `json:"image_urls"`
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 1<<20))
+	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 20<<20))
 	if err := decoder.Decode(&input); err != nil {
 		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
 		return
 	}
 	input.Prompt = strings.TrimSpace(input.Prompt)
-	if err := session.ValidateInput(input.Prompt); err != nil {
+	if err := validateImageURLs(input.ImageURLs); err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := session.ValidateTurnInput(session.TurnInput{Text: input.Prompt, ImageURLs: input.ImageURLs}); err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -193,7 +199,7 @@ func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 
-	wrote, err := streamTurn(request, writer, sessionIO, input.Prompt)
+	wrote, err := streamTurn(request, writer, sessionIO, input.Prompt, input.ImageURLs)
 	if err != nil {
 		if !wrote {
 			http.Error(writer, err.Error(), http.StatusBadGateway)
@@ -243,6 +249,24 @@ func (h *Handler) startThread(writer http.ResponseWriter, request *http.Request)
 	_ = json.NewEncoder(writer).Encode(metadata)
 }
 
+func (h *Handler) threadHistory(writer http.ResponseWriter, request *http.Request) {
+	threadID := request.PathValue("threadID")
+	runtime, err := h.thread(threadID)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	runtime.chatMu.Lock()
+	defer runtime.chatMu.Unlock()
+	items, _, err := session.ReadRollout(h.store.rolloutPath(threadID))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(map[string]any{"items": items})
+}
+
 func (h *Handler) selectWorkspace(writer http.ResponseWriter, request *http.Request) {
 	workspaceRoot, cancelled, err := chooseWorkspace(request.Context())
 	if err != nil {
@@ -281,7 +305,9 @@ func (h *Handler) sessionIO(runtime *threadRuntime) (*session.IO, error) {
 	if runtime.io != nil {
 		return runtime.io, nil
 	}
-	_, sessionIO, err := session.NewInWorkspace(h.client, runtime.metadata.WorkspaceRoot)
+	_, sessionIO, err := session.NewInWorkspaceWithRollout(
+		h.client, runtime.metadata.WorkspaceRoot, h.store.rolloutPath(runtime.metadata.ID),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("start thread %s: %w", runtime.metadata.ID, err)
 	}
@@ -289,8 +315,8 @@ func (h *Handler) sessionIO(runtime *threadRuntime) (*session.IO, error) {
 	return sessionIO, nil
 }
 
-func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *session.IO, prompt string) (bool, error) {
-	turnID, err := sessionIO.SubmitTurnInput(request.Context(), prompt)
+func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *session.IO, prompt string, imageURLs []string) (bool, error) {
+	turnID, err := sessionIO.SubmitTurnInputWithImages(request.Context(), prompt, imageURLs)
 	if err != nil {
 		return false, err
 	}
@@ -371,6 +397,23 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 			return wrote, fmt.Errorf("turn aborted: %s", event.Msg.TurnAborted.Reason)
 		}
 	}
+}
+
+func validateImageURLs(imageURLs []string) error {
+	if len(imageURLs) > 4 {
+		return errors.New("at most 4 images are allowed")
+	}
+	totalSize := 0
+	for _, imageURL := range imageURLs {
+		if !strings.HasPrefix(imageURL, "data:image/") || !strings.Contains(imageURL[:min(len(imageURL), 128)], ";base64,") {
+			return errors.New("images must be base64 data URLs")
+		}
+		totalSize += len(imageURL)
+	}
+	if totalSize > 16<<20 {
+		return errors.New("images exceed the 16 MiB request limit")
+	}
+	return nil
 }
 
 func writeChatStreamEvent(writer http.ResponseWriter, event chatStreamEvent) error {

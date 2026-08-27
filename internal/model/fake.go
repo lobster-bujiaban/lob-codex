@@ -25,6 +25,21 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 	go func() {
 		defer close(events)
 		defer close(errors)
+		calls := make(map[string]struct{})
+		outputs := make(map[string]struct{})
+		for _, item := range request.Input {
+			if item.Type == "function_call" {
+				calls[item.CallID] = struct{}{}
+			} else if item.Type == "function_call_output" {
+				outputs[item.CallID] = struct{}{}
+			}
+		}
+		for callID := range calls {
+			if _, exists := outputs[callID]; !exists {
+				errors <- fmt.Errorf("no tool output found for function call %s", callID)
+				return
+			}
+		}
 
 		if len(request.Input) > 0 {
 			last := request.Input[len(request.Input)-1]
@@ -134,7 +149,7 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 				ID:        "fc_fake_exec",
 				CallID:    "call_fake_exec",
 				Name:      "exec_command",
-				Arguments: `{"cmd":"rg --files","max_output_tokens":1000}`,
+				Arguments: `{"cmd":"pwd && rg --files | sed -n '1,240p'","max_output_tokens":1000}`,
 			}
 			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
 				return

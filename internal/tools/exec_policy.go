@@ -64,13 +64,26 @@ func (policy *ExecPolicy) Evaluate(command string, requestedPrefix []string) (Ex
 	if policy.loadErr != nil {
 		return ExecPolicyRequirement{}, fmt.Errorf("load exec policy: %w", policy.loadErr)
 	}
-	tokens, reusable, err := parseSimpleCommand(command)
+	commands, plain, err := parsePlainShellCommands(command)
 	if err != nil {
 		return ExecPolicyRequirement{}, err
 	}
-	if reusable && isBuiltInReadOnly(tokens) {
-		return ExecPolicyRequirement{MatchedRule: "built-in read-only: " + tokens[0]}, nil
+	allReadOnly := plain && len(commands) > 0
+	for _, tokens := range commands {
+		if !isBuiltInReadOnly(tokens) {
+			allReadOnly = false
+			break
+		}
 	}
+	if allReadOnly {
+		names := make([]string, 0, len(commands))
+		for _, tokens := range commands {
+			names = append(names, filepath.Base(tokens[0]))
+		}
+		return ExecPolicyRequirement{MatchedRule: "built-in read-only: " + strings.Join(names, ", ")}, nil
+	}
+	tokens := commands[0]
+	reusable := plain && len(commands) == 1
 	if reusable {
 		policy.mu.RLock()
 		defer policy.mu.RUnlock()
@@ -97,6 +110,95 @@ func (policy *ExecPolicy) Evaluate(command string, requestedPrefix []string) (Ex
 	return ExecPolicyRequirement{
 		NeedsApproval: true, Reason: reason, ProposedRule: proposed,
 	}, nil
+}
+
+// parsePlainShellCommands mirrors Codex's word-only shell parser boundary for
+// command sequences joined by safe control operators. Dynamic expansion,
+// redirects, grouping, background jobs, and incomplete syntax stay opaque and
+// therefore require approval.
+func parsePlainShellCommands(command string) ([][]string, bool, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil, false, errors.New("cmd must not be empty")
+	}
+	var commands [][]string
+	var tokens []string
+	var token strings.Builder
+	var quote rune
+	escaped := false
+	flushToken := func() {
+		if token.Len() > 0 {
+			tokens = append(tokens, token.String())
+			token.Reset()
+		}
+	}
+	flushCommand := func() error {
+		flushToken()
+		if len(tokens) == 0 {
+			return errors.New("cmd contains an empty shell command")
+		}
+		commands = append(commands, tokens)
+		tokens = nil
+		return nil
+	}
+	for index := 0; index < len(command); index++ {
+		character := rune(command[index])
+		if escaped {
+			token.WriteRune(character)
+			escaped = false
+			continue
+		}
+		if character == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if character == quote {
+				quote = 0
+			} else if character == '$' || character == '`' {
+				if quote == '"' {
+					return [][]string{strings.Fields(command)}, false, nil
+				}
+				token.WriteRune(character)
+			} else {
+				token.WriteRune(character)
+			}
+			continue
+		}
+		if character == '\'' || character == '"' {
+			quote = character
+			continue
+		}
+		if character == '$' || character == '`' || strings.ContainsRune("><(){}\n\r", character) {
+			return [][]string{strings.Fields(command)}, false, nil
+		}
+		if character == ';' || character == '|' || character == '&' {
+			if character == '&' {
+				if index+1 >= len(command) || command[index+1] != '&' {
+					return [][]string{strings.Fields(command)}, false, nil
+				}
+				index++
+			} else if character == '|' && index+1 < len(command) && command[index+1] == '|' {
+				index++
+			}
+			if err := flushCommand(); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
+		if character == ' ' || character == '\t' {
+			flushToken()
+			continue
+		}
+		token.WriteRune(character)
+	}
+	if escaped || quote != 0 {
+		return nil, false, errors.New("cmd contains an unfinished escape or quote")
+	}
+	if err := flushCommand(); err != nil {
+		return nil, false, err
+	}
+	return commands, true, nil
 }
 
 // AddPersistentRule stores an approved amendment beneath the workspace tmp directory.

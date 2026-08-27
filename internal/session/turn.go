@@ -27,7 +27,7 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 	var lastAgentMessage *string
 	var timeToFirstToken *int64
 	for _, item := range input {
-		s.history.RecordItems(protocol.NewUserMessage(item.Text))
+		s.recordConversationItems(protocol.NewUserMessageWithImages(item.Text, item.ImageURLs))
 	}
 
 	for step := 0; step < maxTurnSteps; step++ {
@@ -100,7 +100,7 @@ func (s *Session) runSamplingRequest(
 				if event.Item != nil {
 					item := *event.Item
 					completedItem = &item
-					s.history.RecordItems(item)
+					s.recordConversationItems(item)
 					recordedOutputItem = true
 					call, err := stepContext.ToolRouter.BuildToolCall(item)
 					if err != nil {
@@ -109,14 +109,14 @@ func (s *Session) runSamplingRequest(
 							callID = "invalid_function_call"
 						}
 						toolOutput := protocol.NewFunctionCallOutput(callID, err.Error())
-						s.history.RecordItems(toolOutput)
+						s.recordConversationItems(toolOutput)
 						needsFollowUp = true
 					} else if call != nil {
 						s.sendEvent(stepContext.Turn, protocol.NewToolCallStarted(call.CallID, call.Name, call.Arguments))
 						toolOutput := stepContext.ToolRouter.Execute(ctx, *call, func(message protocol.EventMsg) {
 							s.sendEvent(stepContext.Turn, message)
 						})
-						s.history.RecordItems(toolOutput)
+						s.recordConversationItems(toolOutput)
 						s.sendEvent(stepContext.Turn, protocol.NewToolCallCompleted(call.CallID, call.Name, toolOutput.Output))
 						needsFollowUp = true
 					}
@@ -144,7 +144,7 @@ func (s *Session) runSamplingRequest(
 		completedItem = &item
 	}
 	if !recordedOutputItem {
-		s.history.RecordItems(*completedItem)
+		s.recordConversationItems(*completedItem)
 	}
 	if completedItem.Role == "assistant" && completedItem.Text() != "" {
 		message = completedItem.Text()

@@ -27,6 +27,10 @@ func newThreadStore(dataRoot string) threadStore {
 	return threadStore{directory: filepath.Join(dataRoot, "tmp", "threads")}
 }
 
+func (store threadStore) rolloutPath(threadID string) string {
+	return filepath.Join(store.directory, threadID+".jsonl")
+}
+
 func (store threadStore) create(workspaceRoot string) (threadMetadata, error) {
 	workspaceRoot, err := validateWorkspace(workspaceRoot)
 	if err != nil {

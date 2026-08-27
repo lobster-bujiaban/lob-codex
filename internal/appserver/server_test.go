@@ -122,6 +122,21 @@ func TestThreadWorkspacePersistsAndRoutesExec(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dataRoot, "tmp", "threads", thread.ID+".json")); err != nil {
 		t.Fatalf("persisted thread metadata: %v", err)
 	}
+	rolloutPath := filepath.Join(dataRoot, "tmp", "threads", thread.ID+".jsonl")
+	if _, err := os.Stat(rolloutPath); err != nil {
+		t.Fatalf("persisted thread rollout: %v", err)
+	}
+	rollout, err := os.OpenFile(rolloutPath, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open rollout: %v", err)
+	}
+	_, err = rollout.WriteString(`{"timestamp":"2026-08-28T00:00:00Z","ordinal":999,"type":"response_item","payload":{"type":"function_call","id":"fc_interrupted","call_id":"call_interrupted","name":"exec_command","arguments":"{}"}}` + "\n")
+	if closeErr := rollout.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatalf("append interrupted call: %v", err)
+	}
 
 	resumedHandler := appserver.NewHandler(model.NewFakeClient())
 	defer resumedHandler.Close(context.Background())
@@ -138,6 +153,23 @@ func TestThreadWorkspacePersistsAndRoutesExec(t *testing.T) {
 	resumeResponse.Body.Close()
 	if resumeResponse.StatusCode != http.StatusOK {
 		t.Fatalf("resume chat status = %d", resumeResponse.StatusCode)
+	}
+	historyResponse, err := http.Get(resumedServer.URL + "/api/threads/" + thread.ID + "/history")
+	if err != nil {
+		t.Fatalf("history Get() error = %v", err)
+	}
+	defer historyResponse.Body.Close()
+	var history struct {
+		Items []struct {
+			Type string `json:"type"`
+			Role string `json:"role"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(historyResponse.Body).Decode(&history); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	if len(history.Items) < 4 || history.Items[0].Role != "user" || history.Items[len(history.Items)-1].Role != "assistant" {
+		t.Fatalf("resumed history = %+v", history.Items)
 	}
 }
 

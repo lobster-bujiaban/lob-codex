@@ -31,7 +31,8 @@ type ExecApprovalResponse struct {
 
 // TurnInput is model-visible input reserved for one turn.
 type TurnInput struct {
-	Text string
+	Text      string
+	ImageURLs []string
 }
 
 // Submission wraps an operation with the ID used to correlate emitted events.

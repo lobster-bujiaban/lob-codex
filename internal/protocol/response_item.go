@@ -21,19 +21,30 @@ func NewFunctionCallOutput(callID, output string) ResponseItem {
 
 // ContentItem is one typed piece of message content.
 type ContentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 // NewUserMessage converts accepted turn text into a model-visible user item.
 func NewUserMessage(text string) ResponseItem {
+	return NewUserMessageWithImages(text, nil)
+}
+
+// NewUserMessageWithImages converts text and clipboard images into one ordered
+// user message, matching Codex's UserInput to ContentItem conversion boundary.
+func NewUserMessageWithImages(text string, imageURLs []string) ResponseItem {
+	content := make([]ContentItem, 0, 1+len(imageURLs))
+	if text != "" {
+		content = append(content, ContentItem{Type: "input_text", Text: text})
+	}
+	for _, imageURL := range imageURLs {
+		content = append(content, ContentItem{Type: "input_image", ImageURL: imageURL})
+	}
 	return ResponseItem{
-		Type: "message",
-		Role: "user",
-		Content: []ContentItem{{
-			Type: "input_text",
-			Text: text,
-		}},
+		Type:    "message",
+		Role:    "user",
+		Content: content,
 	}
 }
 

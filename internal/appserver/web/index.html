@@ -45,6 +45,12 @@
     .brand-copy { min-width: 0; }
     .brand-copy strong { display: block; font-size: 18px; letter-spacing: -.02em; }
     .brand-copy span { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+    .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #eee9e0; }
+    .mode-button { padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 650; cursor: pointer; }
+    .mode-button.active { background: #fff; color: var(--ink); box-shadow: 0 2px 8px rgba(37,49,67,.08); }
+    .mode-button[data-mode="learning"].active { color: var(--orange-dark); }
+    .is-hidden { display: none !important; }
+    body[data-mode-view="work"] .thread-list { max-height: none; }
 
     .section-label { margin: 24px 7px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; }
     .concept-list { display: grid; gap: 5px; }
@@ -145,6 +151,10 @@
     .assistant .avatar img { width: 100%; height: 100%; object-fit: cover; }
     .bubble { padding: 12px 15px; border-radius: 5px 17px 17px 17px; white-space: pre-wrap; word-break: break-word; line-height: 1.75; }
     .assistant .bubble { border: 1px solid var(--line); background: #fff; box-shadow: 0 7px 22px rgba(37,49,67,.045); }
+    .message-content { min-width: 0; }
+    .message-actions { display: flex; margin-top: 5px; }
+    .copy-message { padding: 2px 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+    .copy-message:hover { background: #eeeae3; color: var(--ink-soft); }
     .user .bubble { border-radius: 17px 5px 17px 17px; background: var(--navy); color: #fff; }
     .message.error .bubble { border-color: #efc0bc; background: #fff5f4; color: var(--red); }
     .tool-call {
@@ -180,6 +190,15 @@
       display: flex; align-items: flex-end; gap: 10px; padding: 10px 10px 10px 16px;
       border: 1px solid #dcd4c8; border-radius: 20px; background: #fff; box-shadow: var(--shadow);
     }
+    .input-stack { min-width: 0; flex: 1; }
+    .image-previews { display: flex; flex-wrap: wrap; gap: 8px; }
+    .image-previews:empty { display: none; }
+    .image-preview { position: relative; width: 68px; height: 68px; margin-bottom: 5px; }
+    .image-preview img { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 11px; object-fit: cover; }
+    .image-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: var(--ink); color: #fff; font: 14px/16px var(--font); cursor: pointer; }
+    .attach-button { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; margin-bottom: 2px; border: 0; border-radius: 11px; background: #f2eee7; color: var(--ink-soft); cursor: pointer; }
+    .attach-button:hover { background: var(--orange-soft); color: var(--orange-dark); }
+    .attach-button svg { width: 19px; height: 19px; }
     textarea {
       flex: 1; min-height: 44px; max-height: 170px; resize: none; padding: 10px 0 7px;
       border: 0; outline: 0; background: transparent; color: var(--ink); line-height: 1.55;
@@ -216,11 +235,16 @@
         <div class="brand-copy"><strong>LOB Codex</strong><span>用 Go 读懂 Codex Harness</span></div>
       </button>
 
-      <div class="thread-header"><p class="section-label">对话工作区</p><button id="new-thread" class="new-thread" type="button">＋ 新建</button></div>
-      <div id="thread-list" class="thread-list"></div>
+      <div class="mode-switch" role="tablist" aria-label="使用模式">
+        <button class="mode-button active" type="button" data-mode="work" role="tab" aria-selected="true">工作模式</button>
+        <button class="mode-button" type="button" data-mode="learning" role="tab" aria-selected="false">学习模式</button>
+      </div>
 
-      <p class="section-label">当前学习主链</p>
-      <nav class="concept-list">
+      <div class="thread-header work-only"><p class="section-label">对话工作区</p><button id="new-thread" class="new-thread" type="button">＋ 新建</button></div>
+      <div id="thread-list" class="thread-list work-only"></div>
+
+      <p class="section-label learning-only is-hidden">当前学习主链</p>
+      <nav class="concept-list learning-only is-hidden">
         <button class="concept active" type="button" data-topic="Session / Turn / Step"><span class="concept-index">01</span><span>Session / Turn / Step</span></button>
         <button class="concept" type="button" data-topic="Conversation History"><span class="concept-index">02</span><span>Conversation History</span></button>
         <button class="concept" type="button" data-topic="Tool Router"><span class="concept-index">03</span><span>Tool Router</span></button>
@@ -228,7 +252,7 @@
         <button class="concept" type="button" data-topic="MCP & Plugins"><span class="concept-index">05</span><span>MCP & Plugins</span></button>
       </nav>
 
-      <div class="sidebar-bottom">
+      <div class="sidebar-bottom learning-only is-hidden">
         <p class="social-title">关注「虾哥不加班」</p>
         <div class="social-grid">
           <button class="social-card" type="button" data-qr="wechat">
@@ -271,7 +295,14 @@
       <div class="composer-dock">
         <div class="composer-wrap">
           <form id="chat-form">
-            <textarea id="prompt" rows="1" placeholder="问一个关于 Codex Harness 的问题…" required></textarea>
+            <input id="image-picker" type="file" accept="image/*" multiple hidden>
+            <button id="attach-image" class="attach-button" type="button" aria-label="添加图片" title="添加或粘贴图片">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <div class="input-stack">
+              <div id="image-previews" class="image-previews" aria-live="polite"></div>
+              <textarea id="prompt" rows="1" placeholder="问一个关于 Codex Harness 的问题…"></textarea>
+            </div>
             <button id="send" class="send-button" type="submit" aria-label="发送消息">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
@@ -311,6 +342,8 @@
     const form = document.querySelector('#chat-form');
     const prompt = document.querySelector('#prompt');
     const send = document.querySelector('#send');
+    const imagePicker = document.querySelector('#image-picker');
+    const imagePreviews = document.querySelector('#image-previews');
     const messages = document.querySelector('#messages');
     const welcomeTemplate = messages.querySelector('.welcome').cloneNode(true);
     const pageTopic = document.querySelector('#page-topic');
@@ -320,7 +353,10 @@
     const workspaceForm = document.querySelector('#workspace-form');
     const workspaceInput = document.querySelector('#workspace-input');
     const workspaceError = document.querySelector('#workspace-error');
+    const homeButton = document.querySelector('#home-button');
     let activeThreadID = 'current-workspace';
+    let activeMode = 'work';
+    let pendingImages = [];
     let threads = [];
     const topicProfiles = {
       'Session / Turn / Step': {
@@ -371,8 +407,20 @@
     };
     let activeRequest;
 
+    const workProfile = {
+      title: '准备好一起完成工作',
+      description: '选择一个工作区，直接让 LOB Codex 阅读代码、修改文件或执行命令。',
+      prompts: [
+        ['了解项目', '分析当前项目结构', '请分析当前项目结构，并告诉我最值得先关注的模块。'],
+        ['继续开发', '找出下一步任务', '请结合当前代码和文档，判断下一步最应该实现什么。'],
+        ['检查改动', '查看工作区状态', '请检查当前工作区改动，并指出需要关注的问题。']
+      ]
+    };
+
     function createWelcome(topic) {
-      const profile = topicProfiles[topic] || topicProfiles['Session / Turn / Step'];
+      const profile = activeMode === 'work'
+        ? workProfile
+        : (topicProfiles[topic] || topicProfiles['Session / Turn / Step']);
       const welcome = welcomeTemplate.cloneNode(true);
       welcome.querySelector('h1').textContent = profile.title;
       welcome.querySelector('p').textContent = profile.description;
@@ -398,14 +446,39 @@
       messages.replaceChildren(createWelcome(topic));
       bindPromptChips(messages);
       prompt.value = '';
+      pendingImages = [];
+      renderImagePreviews();
       prompt.style.height = '';
       send.disabled = false;
-      pageTopic.textContent = topic;
+      pageTopic.textContent = activeMode === 'work' ? '工作模式' : topic;
       document.querySelectorAll('.concept').forEach((button) => {
         button.classList.toggle('active', button.dataset.topic === topic);
       });
       document.querySelector('.conversation').scrollTop = 0;
       prompt.focus();
+    }
+
+    function setMode(mode) {
+      if (mode !== 'work' && mode !== 'learning') return;
+      activeMode = mode;
+      document.body.dataset.modeView = mode;
+      document.querySelectorAll('.mode-button').forEach((button) => {
+        const active = button.dataset.mode === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      document.querySelectorAll('.learning-only').forEach((element) => {
+        element.classList.toggle('is-hidden', mode !== 'learning');
+      });
+      document.querySelectorAll('.work-only').forEach((element) => {
+        element.classList.toggle('is-hidden', mode !== 'work');
+      });
+      homeButton.textContent = mode === 'learning' ? '返回学习首页' : '清空对话视图';
+      prompt.placeholder = mode === 'learning'
+        ? '问一个关于 Codex Harness 的问题…'
+        : '描述你想在当前工作区完成的任务…';
+      renderThreads();
+      showHome();
     }
 
     function renderThreads() {
@@ -423,14 +496,27 @@
         threadList.append(button);
       });
       const active = threads.find((thread) => thread.id === activeThreadID);
-      workspacePath.textContent = active ? `工作区 / ${active.workspace_root}` : '工作区缺失';
+      workspacePath.textContent = activeMode === 'learning'
+        ? '学习模式 / Codex Harness'
+        : (active ? `工作区 / ${active.workspace_root}` : '工作区缺失');
     }
 
-    function selectThread(threadID) {
+    async function selectThread(threadID) {
       activeRequest?.abort();
       activeThreadID = threadID;
       renderThreads();
       showHome();
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}/history`);
+        if (!response.ok) throw new Error(await response.text());
+        if (activeThreadID !== threadID) return;
+        renderHistory((await response.json()).items || []);
+      } catch (error) {
+        if (activeThreadID !== threadID) return;
+        const message = addMessage('assistant');
+        message.row.classList.add('error');
+        message.bubble.textContent = `恢复历史失败：${error.message}`;
+      }
     }
 
     async function loadThreads() {
@@ -503,10 +589,91 @@
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.textContent = text;
-      row.append(avatar, bubble);
+      const content = document.createElement('div');
+      content.className = 'message-content';
+      content.append(bubble);
+      if (role === 'assistant') {
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+        const copy = document.createElement('button');
+        copy.className = 'copy-message';
+        copy.type = 'button';
+        copy.textContent = '复制';
+        copy.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(bubble.innerText);
+          copy.textContent = '已复制';
+          setTimeout(() => { copy.textContent = '复制'; }, 1200);
+        });
+        actions.append(copy);
+        content.append(actions);
+      }
+      row.append(avatar, content);
       messages.append(row);
       row.scrollIntoView({ behavior: 'smooth', block: 'end' });
       return { row, bubble };
+    }
+
+    function renderImagePreviews() {
+      imagePreviews.replaceChildren();
+      pendingImages.forEach((imageURL, index) => {
+        const preview = document.createElement('div');
+        preview.className = 'image-preview';
+        const image = document.createElement('img');
+        image.src = imageURL;
+        image.alt = `待发送图片 ${index + 1}`;
+        const remove = document.createElement('button');
+        remove.className = 'image-remove';
+        remove.type = 'button';
+        remove.setAttribute('aria-label', `移除图片 ${index + 1}`);
+        remove.textContent = '×';
+        remove.addEventListener('click', () => {
+          pendingImages.splice(index, 1);
+          renderImagePreviews();
+        });
+        preview.append(image, remove);
+        imagePreviews.append(preview);
+      });
+    }
+
+    function readImageFiles(files) {
+      const available = Math.max(0, 4 - pendingImages.length);
+      [...files].filter((file) => file.type.startsWith('image/')).slice(0, available).forEach((file) => {
+        if (file.size > 8 * 1024 * 1024) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+          pendingImages.push(reader.result);
+          renderImagePreviews();
+        });
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderHistory(items) {
+      if (!items.length) return;
+      messages.replaceChildren();
+      const toolCalls = new Map();
+      items.forEach((item) => {
+        if (item.type === 'message' && (item.role === 'user' || item.role === 'assistant')) {
+          const text = (item.content || []).map((content) => content.text || '').join('');
+          const message = addMessage(item.role, text);
+          (item.content || []).filter((content) => content.type === 'input_image').forEach((content) => {
+            const image = document.createElement('img');
+            image.src = content.image_url;
+            image.alt = '历史消息图片';
+            image.style.cssText = 'display:block;max-width:280px;max-height:240px;margin-top:8px;border-radius:10px;object-fit:contain';
+            message.bubble.append(image);
+          });
+        } else if (item.type === 'function_call') {
+          addToolCall(toolCalls, {
+            call_id: item.call_id, name: item.name, arguments: item.arguments
+          });
+        } else if (item.type === 'function_call_output') {
+          completeToolCall(toolCalls, {
+            call_id: item.call_id, output: item.output
+          });
+        }
+      });
+      document.querySelector('.conversation').scrollTop = document.querySelector('.conversation').scrollHeight;
     }
 
     function addToolCall(toolCalls, event) {
@@ -656,14 +823,24 @@
     }
 
     async function submitPrompt(text) {
-      if (!text || send.disabled) return;
+      if ((!text && !pendingImages.length) || send.disabled) return;
       const request = new AbortController();
       const requestThreadID = activeThreadID;
+      const requestImages = pendingImages.slice();
       activeRequest = request;
-      addMessage('user', text);
+      const userMessage = addMessage('user', text);
+      requestImages.forEach((imageURL) => {
+        const image = document.createElement('img');
+        image.src = imageURL;
+        image.alt = '已发送图片';
+        image.style.cssText = 'display:block;max-width:280px;max-height:240px;margin-top:8px;border-radius:10px;object-fit:contain';
+        userMessage.bubble.append(image);
+      });
       let assistant;
       const toolCalls = new Map();
       prompt.value = '';
+      pendingImages = [];
+      renderImagePreviews();
       prompt.style.height = '';
       send.disabled = true;
 
@@ -671,7 +848,7 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: text, thread_id: requestThreadID }),
+          body: JSON.stringify({ prompt: text, thread_id: requestThreadID, image_urls: requestImages }),
           signal: request.signal
         });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
@@ -728,6 +905,21 @@
       event.preventDefault();
       submitPrompt(prompt.value.trim());
     });
+    document.querySelector('#attach-image').addEventListener('click', () => imagePicker.click());
+    imagePicker.addEventListener('change', () => {
+      readImageFiles(imagePicker.files);
+      imagePicker.value = '';
+    });
+    prompt.addEventListener('paste', (event) => {
+      const imageFiles = [...event.clipboardData.items]
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      if (imageFiles.length) {
+        event.preventDefault();
+        readImageFiles(imageFiles);
+      }
+    });
 
     prompt.addEventListener('input', () => {
       prompt.style.height = 'auto';
@@ -742,6 +934,9 @@
     });
 
     bindPromptChips();
+    document.querySelectorAll('.mode-button').forEach((button) => {
+      button.addEventListener('click', () => setMode(button.dataset.mode));
+    });
     document.querySelector('#home-brand').addEventListener('click', () => showHome());
     document.querySelector('#home-button').addEventListener('click', () => showHome());
     document.querySelector('#new-thread').addEventListener('click', createThread);
@@ -778,6 +973,7 @@
     qrDialog.addEventListener('click', (event) => {
       if (event.target === qrDialog) qrDialog.close();
     });
+    setMode('work');
     loadThreads().catch((error) => { workspacePath.textContent = `工作区加载失败：${error.message}`; });
   </script>
 </body>
