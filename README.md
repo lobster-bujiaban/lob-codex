@@ -50,3 +50,16 @@
 - [ ] 阶段 5：MCP、Skills 与插件
 - [ ] 阶段 6：多 Agent、后台任务与上下文压缩
 - [ ] 阶段 7：Web GUI 与生产化
+
+## 运行阶段 0
+
+```bash
+go run ./cmd/lob-codex "你好，LOB Codex"
+```
+
+当前使用无需网络的 `FakeModel` 验证 CLI、Agent Runner、模型接口和事件流。运行检查：
+
+```bash
+go test ./...
+go vet ./...
+```

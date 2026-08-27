@@ -42,7 +42,7 @@ MCP / Skills / Plugins / Subagents
 
 ### 阶段 0：项目骨架与架构约束
 
-目标：建立 TypeScript 工程、模块边界和决策记录。
+目标：建立 Go 工程、模块边界和决策记录。
 
 任务：
 
