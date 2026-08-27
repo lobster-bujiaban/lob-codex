@@ -39,6 +39,15 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 		if result.TimeToFirstToken != nil {
 			timeToFirstToken = result.TimeToFirstToken
 		}
+		s.activeMu.Lock()
+		active := s.active
+		s.activeMu.Unlock()
+		if active != nil && active.turnID == turnContext.SubID {
+			for _, item := range active.takePendingInput() {
+				s.recordConversationItems(protocol.NewUserMessageWithImages(item.Text, item.ImageURLs))
+				result.NeedsFollowUp = true
+			}
+		}
 		if !result.NeedsFollowUp {
 			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken}
 		}

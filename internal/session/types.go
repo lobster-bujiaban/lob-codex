@@ -12,6 +12,7 @@ type OpType string
 const (
 	OpTurnInput    OpType = "turn_input"
 	OpExecApproval OpType = "exec_approval"
+	OpInterrupt    OpType = "interrupt"
 	OpShutdown     OpType = "shutdown"
 )
 

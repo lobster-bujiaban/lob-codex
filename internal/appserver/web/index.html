@@ -172,6 +172,19 @@
     .assistant .avatar img { width: 100%; height: 100%; object-fit: cover; }
     .bubble { padding: 12px 15px; border-radius: 5px 17px 17px 17px; white-space: pre-wrap; word-break: break-word; line-height: 1.75; }
     .assistant .bubble { border: 1px solid var(--line); background: #fff; box-shadow: 0 7px 22px rgba(37,49,67,.045); }
+    .markdown { white-space: normal; }
+    .markdown > :first-child { margin-top: 0; }
+    .markdown > :last-child { margin-bottom: 0; }
+    .markdown p { margin: 0 0 12px; }
+    .markdown h1, .markdown h2, .markdown h3 { margin: 20px 0 9px; color: var(--ink); line-height: 1.35; }
+    .markdown h1 { font-size: 20px; }.markdown h2 { font-size: 17px; }.markdown h3 { font-size: 15px; }
+    .markdown ul, .markdown ol { margin: 7px 0 13px; padding-left: 24px; }
+    .markdown li { margin: 4px 0; }
+    .markdown blockquote { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #efb99f; background: #fff8f2; color: var(--muted); }
+    .markdown code { padding: 2px 5px; border-radius: 5px; background: #f1eee9; color: #b44420; font: .9em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .markdown pre { overflow-x: auto; margin: 12px 0; padding: 13px 15px; border-radius: 11px; background: #172d4f; color: #eaf0f7; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+    .markdown pre code { padding: 0; background: transparent; color: inherit; }
+    .markdown a { color: #315bd4; text-decoration: none; }.markdown a:hover { text-decoration: underline; }
     .message-content { min-width: 0; }
     .message-actions { display: flex; gap: 2px; margin-top: 6px; }
     .message-action { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
@@ -180,16 +193,27 @@
     .message-action svg { width: 15px; height: 15px; }
     .user .bubble { border-radius: 17px 5px 17px 17px; background: var(--navy); color: #fff; }
     .message.error .bubble { border-color: #efc0bc; background: #fff5f4; color: var(--red); }
+    .activity {
+      align-self: flex-start; display: flex; align-items: flex-start; gap: 9px; max-width: 78%;
+      color: var(--muted); font-size: 12px; line-height: 1.65; animation: enter .22s ease both;
+    }
+    .activity-icon { width: 17px; flex: 0 0 17px; color: #7f8792; text-align: center; }
+    .activity.running .activity-icon { animation: blink .8s infinite alternate; }
+    .activity-text { white-space: pre-wrap; }
     .tool-call {
-      align-self: flex-start; width: min(620px, 88%); padding: 13px 15px;
+      align-self: flex-start; width: min(620px, 88%); padding: 0;
       border: 1px solid #d8d2ef; border-radius: 14px; background: #faf9ff; color: var(--ink-soft);
       animation: enter .22s ease both;
     }
-    .tool-call-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .tool-call-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 15px; cursor: pointer; list-style: none; }
+    .tool-call-header::-webkit-details-marker { display: none; }
+    .tool-call-header::before { content: "›"; color: var(--muted); transition: transform .15s ease; }
+    .tool-call[open] .tool-call-header::before { transform: rotate(90deg); }
+    .tool-call-body { padding: 0 15px 13px; }
     .tool-call-name { color: #5b4ba8; font-size: 12px; font-weight: 750; }
     .tool-call-status { color: var(--muted); font-size: 10px; }
     .tool-call.completed .tool-call-status { color: var(--green); }
-    .tool-call pre { overflow-x: auto; margin: 8px 0 0; color: #53627a; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .tool-call pre { overflow-x: auto; margin: 0; color: #53627a; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
     .tool-call-output { margin-top: 9px; padding-top: 9px; border-top: 1px solid #e4e0f2; font-size: 12px; }
     .approval-card { align-self: flex-start; width: min(620px, 90%); padding: 16px; border: 1px solid #efb99f; border-radius: 16px; background: #fff8ee; animation: enter .22s ease both; }
     .approval-card h3 { margin: 0; color: var(--orange-dark); font-size: 14px; }
@@ -211,6 +235,9 @@
     .flow-metrics { display: flex; flex-wrap: wrap; gap: 7px; }
     .flow-metric { padding: 5px 9px; border-radius: 999px; background: #ffedb9; color: #7a5710; font-size: 10px; font-weight: 700; }
     .flow-hint { margin: 9px 0 0; color: #8a7040; font-size: 11px; }
+    .flow-storage { display: grid; gap: 5px; margin-top: 12px; padding-top: 11px; border-top: 1px solid #ecdcae; }
+    .flow-storage-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; color: #8a7040; font-size: 10px; }
+    .flow-storage-row code { overflow: hidden; color: #604d2b; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
     .flow-timeline { position: relative; display: grid; gap: 16px; margin-top: 25px; padding-left: 58px; }
     .flow-timeline::before { content: ""; position: absolute; top: 22px; bottom: 22px; left: 22px; width: 2px; background: #dfe3e8; }
     .flow-node { position: relative; padding: 15px 17px; border: 1px solid #e0e3e8; border-left: 5px solid #929aa7; border-radius: 14px; background: #fff; box-shadow: 0 6px 20px rgba(37,49,67,.045); }
@@ -253,6 +280,7 @@
       box-shadow: 0 7px 16px rgba(237,90,42,.24); transition: .18s ease;
     }
     .send-button:hover { background: var(--orange-dark); transform: translateY(-1px); }
+    .send-button.stop { background: var(--ink); box-shadow: 0 7px 16px rgba(24,45,79,.2); }
     .send-button:disabled { opacity: .48; cursor: wait; transform: none; }
     .send-button svg { width: 19px; height: 19px; }
     .composer-meta { display: flex; justify-content: space-between; padding: 8px 8px 0; color: var(--muted); font-size: 10px; }
@@ -471,6 +499,17 @@
       }
     };
     let activeRequest;
+    let interrupting = false;
+    const sendIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>';
+
+    function updateComposerAction() {
+      const shouldStop = Boolean(activeRequest) && !prompt.value.trim() && !pendingImages.length;
+      send.classList.toggle('stop', shouldStop);
+      send.innerHTML = shouldStop ? stopIcon : sendIcon;
+      send.setAttribute('aria-label', shouldStop ? '中断当前任务' : (activeRequest ? '引导当前任务' : '发送消息'));
+      send.title = shouldStop ? '中断' : (activeRequest ? '引导当前任务' : '发送');
+    }
 
     const workProfile = {
       title: '准备好一起完成工作',
@@ -508,6 +547,7 @@
     function showHome(topic = 'Session / Turn / Step') {
       activeRequest?.abort();
       activeRequest = undefined;
+      interrupting = false;
       messages.replaceChildren(createWelcome(topic));
       bindPromptChips(messages);
       prompt.value = '';
@@ -515,6 +555,7 @@
       renderImagePreviews();
       prompt.style.height = '';
       send.disabled = false;
+      updateComposerAction();
       pageTopic.textContent = activeMode === 'work' ? '工作模式' : topic;
       document.querySelectorAll('.concept').forEach((button) => {
         button.classList.toggle('active', button.dataset.topic === topic);
@@ -672,8 +713,25 @@
       });
       const hint = document.createElement('p');
       hint.className = 'flow-hint';
-      hint.textContent = '基于 canonical rollout 重建；Token 为按字节估算值。';
-      flowSummary.append(title, metrics, hint);
+      hint.textContent = '会话级流程，基于当前 Thread 的 canonical rollout 重建；Token 为按字节估算值。';
+      const storage = document.createElement('div');
+      storage.className = 'flow-storage';
+      [
+        ['工作区目录', data.workspace_root || '—'],
+        ['会话存储', data.storage_path || '—'],
+        ['Thread ID', data.thread_id || activeThreadID]
+      ].forEach(([label, value]) => {
+        const row = document.createElement('div');
+        row.className = 'flow-storage-row';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const path = document.createElement('code');
+        path.textContent = value;
+        path.title = value;
+        row.append(name, path);
+        storage.append(row);
+      });
+      flowSummary.append(title, metrics, hint, storage);
 
       flowTimeline.replaceChildren();
       const events = data.events || [];
@@ -830,6 +888,79 @@
       messages.querySelector('.welcome')?.remove();
     }
 
+    function escapeHTML(value) {
+      return value.replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[character]);
+    }
+
+    function renderInlineMarkdown(value) {
+      const code = [];
+      let html = escapeHTML(value).replace(/`([^`]+)`/g, (_, content) => {
+        const index = code.push(`<code>${content}</code>`) - 1;
+        return `\u0000CODE${index}\u0000`;
+      });
+      html = html
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+        .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+        .replace(/\u0000CODE(\d+)\u0000/g, (_, index) => code[Number(index)]);
+      return html;
+    }
+
+    function renderMarkdown(source) {
+      const lines = source.replace(/\r\n?/g, '\n').split('\n');
+      const output = [];
+      let paragraph = [];
+      let listType = '';
+      const flushParagraph = () => {
+        if (paragraph.length) output.push(`<p>${paragraph.map(renderInlineMarkdown).join('<br>')}</p>`);
+        paragraph = [];
+      };
+      const closeList = () => {
+        if (listType) output.push(`</${listType}>`);
+        listType = '';
+      };
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        const fence = line.match(/^\s*```([^`]*)$/);
+        if (fence) {
+          flushParagraph(); closeList();
+          const code = [];
+          while (++index < lines.length && !/^\s*```\s*$/.test(lines[index])) code.push(lines[index]);
+          const language = fence[1].trim();
+          output.push(`<pre${language ? ` data-language="${escapeHTML(language)}"` : ''}><code>${escapeHTML(code.join('\n'))}</code></pre>`);
+          continue;
+        }
+        const heading = line.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          flushParagraph(); closeList();
+          const level = heading[1].length;
+          output.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+          continue;
+        }
+        const list = line.match(/^\s*([-*+] |\d+\. )(.+)$/);
+        if (list) {
+          flushParagraph();
+          const nextType = /\d/.test(list[1][0]) ? 'ol' : 'ul';
+          if (listType !== nextType) { closeList(); output.push(`<${nextType}>`); listType = nextType; }
+          output.push(`<li>${renderInlineMarkdown(list[2])}</li>`);
+          continue;
+        }
+        const quote = line.match(/^>\s?(.*)$/);
+        if (quote) {
+          flushParagraph(); closeList();
+          output.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+          continue;
+        }
+        if (!line.trim()) { flushParagraph(); closeList(); continue; }
+        closeList(); paragraph.push(line);
+      }
+      flushParagraph(); closeList();
+      return output.join('');
+    }
+
     function addMessage(role, text = '', forkItemCount = null) {
       removeWelcome();
       const row = document.createElement('div');
@@ -848,7 +979,12 @@
 
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.textContent = text;
+      if (role === 'assistant') {
+        bubble.classList.add('markdown');
+        bubble.innerHTML = renderMarkdown(text);
+      } else {
+        bubble.textContent = text;
+      }
       const content = document.createElement('div');
       content.className = 'message-content';
       content.append(bubble);
@@ -897,6 +1033,22 @@
       return { row, bubble };
     }
 
+    function addActivity(text = '正在处理…', running = true) {
+      removeWelcome();
+      const row = document.createElement('div');
+      row.className = `activity${running ? ' running' : ''}`;
+      const icon = document.createElement('span');
+      icon.className = 'activity-icon';
+      icon.textContent = '◫';
+      const content = document.createElement('span');
+      content.className = 'activity-text';
+      content.textContent = text;
+      row.append(icon, content);
+      messages.append(row);
+      row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return { row, content };
+    }
+
     function renderImagePreviews() {
       imagePreviews.replaceChildren();
       pendingImages.forEach((imageURL, index) => {
@@ -939,7 +1091,10 @@
       items.forEach((item, itemIndex) => {
         if (item.type === 'message' && (item.role === 'user' || item.role === 'assistant')) {
           const text = (item.content || []).map((content) => content.text || '').join('');
-          const message = addMessage(item.role, text, item.role === 'assistant' ? itemIndex + 1 : null);
+          const isProgress = item.role === 'assistant' && items[itemIndex + 1]?.type === 'function_call';
+          const message = isProgress
+            ? { bubble: addActivity(text, false).content }
+            : addMessage(item.role, text, item.role === 'assistant' ? itemIndex + 1 : null);
           (item.content || []).filter((content) => content.type === 'input_image').forEach((content) => {
             const image = document.createElement('img');
             image.src = content.image_url;
@@ -962,9 +1117,9 @@
 
     function addToolCall(toolCalls, event) {
       removeWelcome();
-      const row = document.createElement('div');
+      const row = document.createElement('details');
       row.className = 'tool-call';
-      const header = document.createElement('div');
+      const header = document.createElement('summary');
       header.className = 'tool-call-header';
       const name = document.createElement('span');
       name.className = 'tool-call-name';
@@ -974,10 +1129,13 @@
       status.textContent = '执行中';
       const argumentsView = document.createElement('pre');
       argumentsView.textContent = event.arguments;
+      const body = document.createElement('div');
+      body.className = 'tool-call-body';
+      body.append(argumentsView);
       header.append(name, status);
-      row.append(header, argumentsView);
+      row.append(header, body);
       messages.append(row);
-      toolCalls.set(event.call_id, { row, status, liveOutput: null });
+      toolCalls.set(event.call_id, { row, body, status, liveOutput: null });
       row.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
@@ -988,7 +1146,7 @@
         toolCall.liveOutput = document.createElement('div');
         toolCall.liveOutput.className = 'tool-call-output';
         toolCall.liveOutput.textContent = '实时输出：\n';
-        toolCall.row.append(toolCall.liveOutput);
+        toolCall.body.append(toolCall.liveOutput);
       }
       const bytes = Uint8Array.from(atob(event.chunk), (character) => character.charCodeAt(0));
       const text = new TextDecoder().decode(bytes);
@@ -1004,7 +1162,7 @@
       interaction.textContent = event.stdin
         ? `终端输入 · Session ${event.process_id}：${JSON.stringify(event.stdin)}`
         : `终端轮询 · Session ${event.process_id}`;
-      toolCall.row.append(interaction);
+      toolCall.body.append(interaction);
     }
 
     function completeToolCall(toolCalls, event) {
@@ -1033,7 +1191,7 @@
       } else {
         output.textContent = `输出：${event.output}`;
       }
-      toolCall.row.append(output);
+      toolCall.body.append(output);
     }
 
     function addApproval(event, threadID) {
@@ -1112,6 +1270,8 @@
       const requestThreadID = activeThreadID;
       const requestImages = pendingImages.slice();
       activeRequest = request;
+      interrupting = false;
+      updateComposerAction();
       const userMessage = addMessage('user', text);
       requestImages.forEach((imageURL) => {
         const image = document.createElement('img');
@@ -1121,12 +1281,14 @@
         userMessage.bubble.append(image);
       });
       let assistant;
+      let activity = addActivity();
+      let candidateText = '';
+      let sawTool = false;
       const toolCalls = new Map();
       prompt.value = '';
       pendingImages = [];
       renderImagePreviews();
       prompt.style.height = '';
-      send.disabled = true;
 
       try {
         const response = await fetch('/api/chat', {
@@ -1142,16 +1304,18 @@
         let buffer = '';
         const handleStreamEvent = (event) => {
           if (event.type === 'assistant_delta') {
-            if (!assistant) {
-              assistant = addMessage('assistant');
-              assistant.bubble.classList.add('typing');
-            }
-            assistant.bubble.textContent += event.delta;
-            assistant.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            candidateText += event.delta;
+            activity.content.textContent = candidateText;
+            activity.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
           } else if (event.type === 'tool_call_started') {
+            sawTool = true;
+            activity.row.classList.remove('running');
+            if (!candidateText.trim()) activity.content.textContent = `正在调用 ${event.name}`;
+            candidateText = '';
             addToolCall(toolCalls, event);
           } else if (event.type === 'tool_call_completed') {
             completeToolCall(toolCalls, event);
+            activity = addActivity('正在整理结果…');
           } else if (event.type === 'exec_command_output_delta') {
             appendExecDelta(toolCalls, event);
           } else if (event.type === 'terminal_interaction') {
@@ -1172,15 +1336,26 @@
         }
         buffer += decoder.decode();
         if (buffer.trim()) handleStreamEvent(JSON.parse(buffer));
+        if (candidateText.trim()) {
+          activity.row.remove();
+          assistant = addMessage('assistant', candidateText);
+        } else if (!sawTool) {
+          activity.row.remove();
+        } else {
+          activity.row.classList.remove('running');
+        }
       } catch (error) {
         if (error.name === 'AbortError') return;
+        if (interrupting) return;
+        activity?.row.remove();
         if (!assistant) assistant = addMessage('assistant');
         assistant.row.classList.add('error');
         assistant.bubble.textContent = error.message;
       } finally {
-        assistant?.bubble.classList.remove('typing');
         send.disabled = false;
         if (activeRequest === request) activeRequest = undefined;
+        interrupting = false;
+        updateComposerAction();
         loadThreads().catch(() => {});
         prompt.focus();
       }
@@ -1188,7 +1363,37 @@
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      submitPrompt(prompt.value.trim());
+      const text = prompt.value.trim();
+      if (!activeRequest) {
+        submitPrompt(text);
+        return;
+      }
+      if (text || pendingImages.length) {
+        if (pendingImages.length) return;
+        fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/steer`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: text })
+        }).then(async (response) => {
+          if (!response.ok) throw new Error(await response.text());
+          addMessage('user', text);
+          addActivity('已加入引导，将在当前步骤结束后继续执行', false);
+          prompt.value = '';
+          prompt.style.height = '';
+          updateComposerAction();
+        }).catch((error) => addActivity(`引导失败：${error.message}`, false));
+        return;
+      }
+      interrupting = true;
+      send.disabled = true;
+      fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/interrupt`, { method: 'POST' })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(await response.text());
+          addActivity('已中断', false);
+        })
+        .catch((error) => {
+          interrupting = false;
+          addActivity(`中断失败：${error.message}`, false);
+        })
+        .finally(() => { send.disabled = false; updateComposerAction(); });
     });
     document.querySelector('#attach-image').addEventListener('click', () => imagePicker.click());
     imagePicker.addEventListener('change', () => {
@@ -1207,6 +1412,7 @@
     });
 
     prompt.addEventListener('input', () => {
+      updateComposerAction();
       prompt.style.height = 'auto';
       prompt.style.height = `${Math.min(prompt.scrollHeight, 170)}px`;
     });

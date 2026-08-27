@@ -89,6 +89,8 @@ func NewHandler(client model.Client) *Handler {
 	handler.mux.HandleFunc("GET /api/threads", handler.listThreads)
 	handler.mux.HandleFunc("POST /api/threads", handler.startThread)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/fork", handler.forkThread)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/interrupt", handler.interruptTurn)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/steer", handler.steerTurn)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/history", handler.threadHistory)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/flow", handler.threadFlow)
 	handler.mux.HandleFunc("POST /api/workspaces/select", handler.selectWorkspace)
@@ -100,6 +102,53 @@ func NewHandler(client model.Client) *Handler {
 	}
 	handler.mux.Handle("GET /", http.FileServer(http.FS(staticFiles)))
 	return handler
+}
+
+func (h *Handler) interruptTurn(writer http.ResponseWriter, request *http.Request) {
+	runtime, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	if err := sessionIO.Interrupt(request.Context()); err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) steerTurn(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 1<<20)).Decode(&input); err != nil {
+		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
+		return
+	}
+	if err := session.ValidateInput(input.Prompt); err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	runtime, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	if _, err := sessionIO.SubmitTurnInput(request.Context(), strings.TrimSpace(input.Prompt)); err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	writer.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Request) {
@@ -311,7 +360,11 @@ func (h *Handler) threadFlow(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(writer).Encode(map[string]any{"events": events, "summary": summary})
+	_ = json.NewEncoder(writer).Encode(map[string]any{
+		"events": events, "summary": summary,
+		"thread_id": threadID, "workspace_root": runtime.metadata.WorkspaceRoot,
+		"storage_path": h.store.rolloutPath(threadID),
+	})
 }
 
 func (h *Handler) forkThread(writer http.ResponseWriter, request *http.Request) {

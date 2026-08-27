@@ -33,7 +33,7 @@
 |---|---|---|
 | 1 | `SessionIo::submit` 创建 `Submission` | `IO.Submit` 创建 `Submission` |
 | 2 | `submission_loop` 分派 `Op` | `submissionLoop` 分派 `Op` |
-| 3 | `turn_input::handle` 决定 start/steer/reject | `handleTurnInput` 当前实现 start，steer/reject 语义待补 |
+| 3 | `turn_input::handle` 决定 start/steer/reject | `handleTurnInput` 空闲时 start，运行中将 steer 加入当前任务输入队列；Interrupt 经 submission loop 取消任务 |
 | 4 | `Session::spawn_task/start_task` 启动后台任务 | `spawnRegularTask` 启动可取消 goroutine |
 | 5 | `RegularTask::run` 发送 `TurnStarted` | `runRegularTask` 发送 `TurnStarted` |
 | 6 | `run_turn` 捕获 `StepContext` 并循环采样 | `runTurn` 捕获 `StepContext` 并保留 follow-up 循环 |
@@ -232,7 +232,7 @@ Session，再删除项目目录与对应 thread metadata/rollout；根目录、�
 
 ## 当前明确差异
 
-- `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。Follow-up Step 已改为与 Codex 一样持续到模型完成或 Turn 被取消，不再设置自定义 8 Step 上限。
+- `TurnInputMode::StartOrSteer` 已实现空闲启动和运行中 input queue；引导在当前 Step 收尾后写入 History 并触发下一 Step。Interrupt 经 submission loop 取消当前任务。当前尚未实现采样过程中抢占并立刻重启 Step。
 - `ResponseItem` 当前实现文本与 base64 `input_image` Message、FunctionCall 和 FunctionCallOutput；Reasoning、远程/本地图片预处理及音频内容尚未补齐。
 - Conversation History 已实现调用/输出配对标准化及 ResponseItem 子集的 rollout 持久化与恢复；Codex 的完整媒体标准化、截断策略和 token 统计尚未实现。
 - Tool Router 当前按顺序执行；并行工具尚未实现。

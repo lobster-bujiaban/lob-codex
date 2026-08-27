@@ -48,8 +48,9 @@ type runningTask struct {
 	done   chan struct{}
 	turnID string
 
-	mu          sync.Mutex
-	abortReason string
+	mu           sync.Mutex
+	abortReason  string
+	pendingInput []TurnInput
 }
 
 type pendingApproval struct {
@@ -149,6 +150,12 @@ func (io *IO) RespondExecApproval(ctx context.Context, response ExecApprovalResp
 	return err
 }
 
+// Interrupt cancels the active turn through the Session submission loop.
+func (io *IO) Interrupt(ctx context.Context) error {
+	_, err := io.Submit(ctx, Op{Type: OpInterrupt})
+	return err
+}
+
 // NextEvent waits for the next public session event.
 func (io *IO) NextEvent(ctx context.Context) (protocol.Event, error) {
 	select {
@@ -192,6 +199,8 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 			s.handleTurnInput(submission)
 		case OpExecApproval:
 			s.handleExecApproval(submission)
+		case OpInterrupt:
+			s.abortActive("interrupted")
 		case OpShutdown:
 			s.abortActive("shutdown")
 			return
@@ -267,6 +276,15 @@ func (s *Session) handleTurnInput(submission Submission) {
 		s.sendEventRaw(protocol.Event{ID: submission.ID, Msg: protocol.NewError("prompt or image is required")})
 		return
 	}
+	s.activeMu.Lock()
+	active := s.active
+	s.activeMu.Unlock()
+	if active != nil {
+		active.mu.Lock()
+		active.pendingInput = append(active.pendingInput, submission.Op.Input...)
+		active.mu.Unlock()
+		return
+	}
 	turnContext := &TurnContext{SubID: submission.ID}
 	s.spawnRegularTask(turnContext, submission.Op.Input)
 }
@@ -317,4 +335,12 @@ func (task *runningTask) reason() string {
 	task.mu.Lock()
 	defer task.mu.Unlock()
 	return task.abortReason
+}
+
+func (task *runningTask) takePendingInput() []TurnInput {
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	input := append([]TurnInput(nil), task.pendingInput...)
+	task.pendingInput = nil
+	return input
 }
