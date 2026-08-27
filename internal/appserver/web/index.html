@@ -278,7 +278,69 @@
     const messages = document.querySelector('#messages');
     const welcomeTemplate = messages.querySelector('.welcome').cloneNode(true);
     const pageTopic = document.querySelector('#page-topic');
+    const topicProfiles = {
+      'Session / Turn / Step': {
+        title: '不只看源码，把 Codex 跑明白',
+        description: '从长生命周期 Session 到单次 Turn，再到内部 Step 快照，先看懂 Codex Harness 的调度骨架。',
+        prompts: [
+          ['主链', '解释 Session、Turn 和 Step', '用通俗语言解释 Codex 的 Session、Turn 和 Step 分别负责什么？'],
+          ['关键设计', '为什么 Step 不是公开事件', '为什么 Codex 的 StepContext 是内部快照，而不是公开事件？'],
+          ['完整流程', '从 Submission 到 TurnComplete', '从 Submission 开始，描述一次 Codex 请求如何走到 TurnComplete。']
+        ]
+      },
+      'Conversation History': {
+        title: '多轮对话，靠的不是字符串拼接',
+        description: '理解 ResponseItem 如何进入会话历史，以及每个 Step 如何从同一事实序列构造模型输入。',
+        prompts: [
+          ['核心顺序', '输入何时写进 History', 'Codex 为什么在模型采样前，先把用户输入写入 Conversation History？'],
+          ['请求快照', 'ForPrompt 做了什么', 'ConversationHistory.ForPrompt 为什么要返回快照？它和 Session 内的原始历史有什么区别？'],
+          ['多轮上下文', '回答如何进入下一轮', '从 OutputItemDone 开始，解释助手回答如何回写 History 并成为下一轮上下文。']
+        ]
+      },
+      'Tool Router': {
+        title: '模型不会直接执行工具',
+        description: '从模型输出 Tool Call，到路由、执行、结果回写和再次采样，拆开 Agent Tool Loop。',
+        prompts: [
+          ['调用识别', 'Tool Call 如何被发现', 'Codex 如何从模型的 ResponseItem 中识别一次工具调用？'],
+          ['路由职责', 'Tool Router 负责什么', 'Tool Router 为什么要把工具查找、参数校验和实际执行分开？'],
+          ['循环机制', '为什么需要再次采样', '工具执行结果写回 Conversation History 后，Codex 为什么还要启动下一次 Step？']
+        ]
+      },
+      'Approval & Sandbox': {
+        title: '能执行，不等于可以直接执行',
+        description: '理解工具调用如何经过审批策略与沙箱边界，再安全地落到真实工作区。',
+        prompts: [
+          ['审批边界', '什么时候需要用户批准', 'Codex 如何判断一个工具调用是否需要向用户申请批准？'],
+          ['隔离执行', 'Sandbox 保护了什么', 'Codex 的 Sandbox 在命令执行过程中主要限制哪些能力？'],
+          ['失败语义', '拒绝后如何继续', '当用户拒绝审批或沙箱阻止命令时，结果如何反馈给模型继续推理？']
+        ]
+      },
+      'MCP & Plugins': {
+        title: '把外部能力接入同一条工具主链',
+        description: 'MCP 和插件扩展工具来源，但仍复用 Codex 的注册、路由、审批与结果回传机制。',
+        prompts: [
+          ['能力发现', 'MCP 工具如何进入 Codex', 'Codex 如何连接 MCP Server 并把远程工具加入当前可用工具集合？'],
+          ['动态更新', '工具列表如何刷新', '当 MCP 工具发生变化时，Codex 如何刷新工具而不破坏当前 Session？'],
+          ['插件关系', 'Plugin、Skill 与 MCP 的区别', '用通俗语言解释 Codex 中 Plugin、Skill 和 MCP 分别解决什么问题。']
+        ]
+      }
+    };
     let activeRequest;
+
+    function createWelcome(topic) {
+      const profile = topicProfiles[topic] || topicProfiles['Session / Turn / Step'];
+      const welcome = welcomeTemplate.cloneNode(true);
+      welcome.querySelector('h1').textContent = profile.title;
+      welcome.querySelector('p').textContent = profile.description;
+      welcome.querySelectorAll('.prompt-chip').forEach((button, index) => {
+        const [label, title, question] = profile.prompts[index];
+        const labelElement = document.createElement('span');
+        labelElement.textContent = label;
+        button.replaceChildren(labelElement, document.createTextNode(title));
+        button.dataset.prompt = question;
+      });
+      return welcome;
+    }
 
     function bindPromptChips(root = document) {
       root.querySelectorAll('.prompt-chip').forEach((button) => {
@@ -289,7 +351,7 @@
     function showHome(topic = 'Session / Turn / Step') {
       activeRequest?.abort();
       activeRequest = undefined;
-      messages.replaceChildren(welcomeTemplate.cloneNode(true));
+      messages.replaceChildren(createWelcome(topic));
       bindPromptChips(messages);
       prompt.value = '';
       prompt.style.height = '';
