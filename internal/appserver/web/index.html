@@ -37,7 +37,7 @@
       display: flex; flex-direction: column; min-height: 0; padding: 24px 18px 18px;
       background: #f8f4ec; border-right: 1px solid var(--line);
     }
-    .brand { display: flex; align-items: center; gap: 12px; padding: 0 5px 22px; }
+    .brand { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0 5px 22px; border: 0; background: transparent; text-align: left; cursor: pointer; }
     .brand-logo {
       width: 48px; height: 48px; object-fit: cover; border-radius: 15px;
       background: #fff; box-shadow: 0 6px 18px rgba(201, 66, 27, .12);
@@ -61,8 +61,10 @@
     .concept-list { display: grid; gap: 5px; }
     .concept {
       display: flex; align-items: center; gap: 10px; padding: 10px 11px;
-      border-radius: 11px; color: var(--ink-soft); font-size: 12px;
+      width: 100%; border: 0; border-radius: 11px; background: transparent; color: var(--ink-soft); font-size: 12px;
+      text-align: left; cursor: pointer;
     }
+    .concept:hover { background: #f0ebe3; color: var(--ink); }
     .concept.active { background: #ebe5db; color: var(--ink); font-weight: 650; }
     .concept-index {
       display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto;
@@ -97,6 +99,12 @@
       display: flex; align-items: center; justify-content: space-between; height: 72px;
       padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(251,250,247,.92);
     }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .home-button {
+      padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px;
+      background: #fff; color: var(--ink-soft); font-size: 11px; cursor: pointer;
+    }
+    .home-button:hover { border-color: #efb99f; color: var(--orange-dark); }
     .page-title span { display: block; color: var(--muted); font-size: 11px; }
     .page-title strong { display: block; margin-top: 1px; font-size: 15px; }
     .status-pill {
@@ -179,10 +187,10 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar" aria-label="项目导航">
-      <div class="brand">
+      <button id="home-brand" class="brand" type="button" aria-label="返回首页">
         <img class="brand-logo" src="/lobster-logo.png" alt="虾哥不加班 Logo">
         <div class="brand-copy"><strong>LOB Codex</strong><span>用 Go 读懂 Codex Harness</span></div>
-      </div>
+      </button>
 
       <section class="project-card">
         <p class="eyebrow">Open Source Lab</p>
@@ -193,11 +201,11 @@
 
       <p class="section-label">当前学习主链</p>
       <nav class="concept-list">
-        <div class="concept active"><span class="concept-index">01</span><span>Session / Turn / Step</span></div>
-        <div class="concept"><span class="concept-index">02</span><span>Conversation History</span></div>
-        <div class="concept"><span class="concept-index">03</span><span>Tool Router</span></div>
-        <div class="concept"><span class="concept-index">04</span><span>Approval & Sandbox</span></div>
-        <div class="concept"><span class="concept-index">05</span><span>MCP & Plugins</span></div>
+        <button class="concept active" type="button" data-topic="Session / Turn / Step"><span class="concept-index">01</span><span>Session / Turn / Step</span></button>
+        <button class="concept" type="button" data-topic="Conversation History"><span class="concept-index">02</span><span>Conversation History</span></button>
+        <button class="concept" type="button" data-topic="Tool Router"><span class="concept-index">03</span><span>Tool Router</span></button>
+        <button class="concept" type="button" data-topic="Approval & Sandbox"><span class="concept-index">04</span><span>Approval & Sandbox</span></button>
+        <button class="concept" type="button" data-topic="MCP & Plugins"><span class="concept-index">05</span><span>MCP & Plugins</span></button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -218,8 +226,11 @@
 
     <section class="stage">
       <header class="topbar">
-        <div class="page-title"><span>原理实验台 / 当前会话</span><strong>Codex Harness 最小实现</strong></div>
-        <div class="status-pill"><span class="status-dot"></span>Responses API 已连接</div>
+        <div class="page-title"><span>原理实验台 / 当前会话</span><strong id="page-topic">Session / Turn / Step</strong></div>
+        <div class="topbar-actions">
+          <button id="home-button" class="home-button" type="button">返回首页</button>
+          <div class="status-pill"><span class="status-dot"></span>Responses API 已连接</div>
+        </div>
       </header>
 
       <main class="conversation">
@@ -265,6 +276,31 @@
     const prompt = document.querySelector('#prompt');
     const send = document.querySelector('#send');
     const messages = document.querySelector('#messages');
+    const welcomeTemplate = messages.querySelector('.welcome').cloneNode(true);
+    const pageTopic = document.querySelector('#page-topic');
+    let activeRequest;
+
+    function bindPromptChips(root = document) {
+      root.querySelectorAll('.prompt-chip').forEach((button) => {
+        button.addEventListener('click', () => submitPrompt(button.dataset.prompt));
+      });
+    }
+
+    function showHome(topic = 'Session / Turn / Step') {
+      activeRequest?.abort();
+      activeRequest = undefined;
+      messages.replaceChildren(welcomeTemplate.cloneNode(true));
+      bindPromptChips(messages);
+      prompt.value = '';
+      prompt.style.height = '';
+      send.disabled = false;
+      pageTopic.textContent = topic;
+      document.querySelectorAll('.concept').forEach((button) => {
+        button.classList.toggle('active', button.dataset.topic === topic);
+      });
+      document.querySelector('.conversation').scrollTop = 0;
+      prompt.focus();
+    }
 
     function removeWelcome() {
       messages.querySelector('.welcome')?.remove();
@@ -297,6 +333,8 @@
 
     async function submitPrompt(text) {
       if (!text || send.disabled) return;
+      const request = new AbortController();
+      activeRequest = request;
       addMessage('user', text);
       const assistant = addMessage('assistant');
       assistant.bubble.classList.add('typing');
@@ -308,7 +346,8 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: text })
+          body: JSON.stringify({ prompt: text }),
+          signal: request.signal
         });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
 
@@ -321,11 +360,13 @@
           assistant.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
       } catch (error) {
+        if (error.name === 'AbortError') return;
         assistant.row.classList.add('error');
         assistant.bubble.textContent = error.message;
       } finally {
         assistant.bubble.classList.remove('typing');
         send.disabled = false;
+        if (activeRequest === request) activeRequest = undefined;
         prompt.focus();
       }
     }
@@ -347,8 +388,11 @@
       }
     });
 
-    document.querySelectorAll('.prompt-chip').forEach((button) => {
-      button.addEventListener('click', () => submitPrompt(button.dataset.prompt));
+    bindPromptChips();
+    document.querySelector('#home-brand').addEventListener('click', () => showHome());
+    document.querySelector('#home-button').addEventListener('click', () => showHome());
+    document.querySelectorAll('.concept').forEach((button) => {
+      button.addEventListener('click', () => showHome(button.dataset.topic));
     });
 
     const qrDialog = document.querySelector('#qr-dialog');
