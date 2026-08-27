@@ -232,6 +232,72 @@ func TestChatContinuesLongRunningExecWithWriteStdin(t *testing.T) {
 	}
 }
 
+func TestChatPreservesHeadAndTailForLargeExecOutput(t *testing.T) {
+	handler := appserver.NewHandler(model.NewFakeClient())
+	defer handler.Close(context.Background())
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	response, err := http.Post(
+		server.URL+"/api/chat",
+		"application/json",
+		strings.NewReader(`{"prompt":"请运行大输出演示"}`),
+	)
+	if err != nil {
+		t.Fatalf("Post() error = %v", err)
+	}
+	defer response.Body.Close()
+
+	decoder := json.NewDecoder(response.Body)
+	var completedOutput string
+	for {
+		var event struct {
+			Type   string `json:"type"`
+			CallID string `json:"call_id"`
+			TurnID string `json:"turn_id"`
+			Name   string `json:"name"`
+			Output string `json:"output"`
+		}
+		if err := decoder.Decode(&event); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		if event.Type == "exec_approval_request" {
+			approvalResponse, err := http.Post(
+				server.URL+"/api/approvals/"+event.CallID,
+				"application/json",
+				strings.NewReader(`{"turn_id":"`+event.TurnID+`","decision":"approved"}`),
+			)
+			if err != nil {
+				t.Fatalf("approval Post() error = %v", err)
+			}
+			approvalResponse.Body.Close()
+		}
+		if event.Type == "tool_call_completed" && event.Name == "exec_command" {
+			completedOutput = event.Output
+		}
+	}
+
+	var result struct {
+		Output             string `json:"output"`
+		OriginalTokenCount int    `json:"original_token_count"`
+		OutputOmittedBytes int    `json:"output_omitted_bytes"`
+	}
+	if err := json.Unmarshal([]byte(completedOutput), &result); err != nil {
+		t.Fatalf("exec output JSON: %v", err)
+	}
+	if !strings.HasPrefix(result.Output, "1\n2\n") || !strings.HasSuffix(result.Output, "50000\n") {
+		t.Fatalf("output did not preserve head and tail: %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "bytes omitted") || result.OutputOmittedBytes == 0 {
+		t.Fatalf("output omission metadata = (%q, %d)", result.Output, result.OutputOmittedBytes)
+	}
+	if result.OriginalTokenCount < 50_000 {
+		t.Fatalf("original token count = %d, want large original output", result.OriginalTokenCount)
+	}
+}
+
 func TestChatRunsInteractivePTY(t *testing.T) {
 	handler := appserver.NewHandler(model.NewFakeClient())
 	defer handler.Close(context.Background())

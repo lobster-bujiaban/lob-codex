@@ -73,6 +73,17 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
 			return
 		}
+		if strings.Contains(input, "大输出演示") {
+			item := protocol.ResponseItem{
+				Type: "function_call", ID: "fc_fake_large_exec", CallID: "call_fake_large_exec",
+				Name: "exec_command", Arguments: `{"cmd":"seq 1 50000","max_output_tokens":1000}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
+		}
 		if strings.Contains(input, "PTY 演示") {
 			item := protocol.ResponseItem{
 				Type: "function_call", ID: "fc_fake_pty", CallID: "call_fake_pty",

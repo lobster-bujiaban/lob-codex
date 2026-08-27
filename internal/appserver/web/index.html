@@ -479,7 +479,10 @@
           : `退出码：${parsedOutput.exit_code}`;
         const terminal = parsedOutput.tty ? ' · TTY' : '';
         const policy = parsedOutput.policy_rule ? `\n策略：${parsedOutput.policy_rule}` : '';
-        output.textContent = `${state}${terminal}${policy}${parsedOutput.output ? `\n输出：${parsedOutput.output}` : ''}`;
+        const collection = parsedOutput.original_token_count !== undefined
+          ? `\n原始 Token 估算：${parsedOutput.original_token_count}${parsedOutput.output_omitted_bytes ? ` · 省略 ${parsedOutput.output_omitted_bytes} 字节` : ''}`
+          : '';
+        output.textContent = `${state}${terminal}${policy}${collection}${parsedOutput.output ? `\n输出：${parsedOutput.output}` : ''}`;
       } else {
         output.textContent = `输出：${event.output}`;
       }

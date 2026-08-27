@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultOutputBytes = 40 << 10
-	maxOutputBytes     = 160 << 10
+	maxOutputBytes     = unifiedExecOutputMaxBytes
 )
 
 // ExecCommandExecutor launches commands through the Session process manager.
@@ -158,11 +158,4 @@ func sandboxedCommand(ctx context.Context, workspaceRoot, workingDirectory, comm
 	cmd := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", "-p", profile, "/bin/zsh", "-c", command)
 	cmd.Dir = workingDirectory
 	return cmd, nil
-}
-
-func truncateOutput(output []byte, limit int) (string, bool) {
-	if len(output) <= limit {
-		return string(output), false
-	}
-	return string(output[:limit]) + "\n…output truncated…", true
 }

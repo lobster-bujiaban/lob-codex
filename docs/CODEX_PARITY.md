@@ -150,6 +150,22 @@ Codex 当前 `write_stdin` schema 只有 `session_id/chars/yield_time_ms/max_out
 PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 unified exec 子进程协议，
 因此 LOB Codex 保持固定 24×120 PTY，而不自行扩展模型工具参数。
 
+## UnifiedExec Head-Tail 输出收集
+
+![Codex UnifiedExec Head-Tail 输出收集流程图](./images/unified-exec-head-tail-buffer.png)
+
+可编辑源图位于 [`diagrams/unified-exec-head-tail-buffer.svg`](./diagrams/unified-exec-head-tail-buffer.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | transcript 使用 1 MiB `HeadTailBuffer` | Session 进程输出缓冲固定上限 1 MiB |
+| 2 | 容量按 50% head / 50% tail 分配 | 稳定保留前缀与最新后缀，丢弃中间字节 |
+| 3 | 每次收集 drain 当前 transcript | exec/write_stdin 每次只消费上次之后的输出 |
+| 4 | 按 max output token budget 再限制结果 | `max_output_tokens × 4` 形成模型可见字节预算 |
+| 5 | 中间插入 `... N bytes omitted ...` | 使用相同省略标记并返回省略字节数 |
+| 6 | 原始字节数按 4 bytes/token 估算 | 向上取整返回 `original_token_count` |
+| 7 | 每个 call 最多 10000 个输出 Delta | 同一 exec call 共享计数，每块最多 8192 字节 |
+
 ## ExecPolicy 与 Session Prefix Rule
 
 ![Codex ExecPolicy 与 Session Prefix Rule 流程图](./images/exec-policy-prefix-rule.png)
@@ -189,7 +205,7 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - Conversation History 尚未实现 Codex 的标准化、截断策略、token 统计、rollout 持久化与恢复。
 - Tool Router 当前按顺序执行；并行工具尚未实现。
 - PTY 当前使用固定 24×120 尺寸；Codex unified exec 同样未暴露 resize 工具参数，平台远程执行器尚未实现。
-- 已实现 chunk_id、输出 Delta 与 TerminalInteraction；输出收集仍采用单一增量游标，尚未实现 Codex 的 head-tail buffer、Delta 数量上限和省略字节统计。
+- 已实现 chunk_id、输出 Delta、TerminalInteraction、1 MiB head-tail buffer、Delta 数量/大小上限和省略字节统计。
 - 审批支持 approved、approved_for_session、approved_with_amendment 与 denied；持久化规则首版采用项目 `tmp/` JSON 文件，尚未实现 Codex 正式规则语法。
 - Prefix rule 第一版只支持简单单命令；复合 shell 命令只允许批准一次。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
@@ -198,5 +214,4 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 
 ## 下一步
 
-继续对齐 unified exec 的 head-tail buffer、Delta 数量上限、original_token_count 与
-output_omitted_bytes；随后实现远程执行器抽象。
+继续实现 unified exec 远程执行器抽象，并保留本地 ProcessManager 相同的输出与失败语义。

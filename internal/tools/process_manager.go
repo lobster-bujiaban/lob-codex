@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -22,31 +21,38 @@ import (
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 const (
-	minYieldTime     = 250 * time.Millisecond
-	maxYieldTime     = 30 * time.Second
-	emptyPollMinimum = 5 * time.Second
+	minYieldTime               = 250 * time.Millisecond
+	maxYieldTime               = 30 * time.Second
+	emptyPollMinimum           = 5 * time.Second
+	unifiedExecOutputMaxBytes  = 1 << 20
+	execOutputDeltaMaxBytes    = 8192
+	maxExecOutputDeltasPerCall = 10_000
 )
 
 type synchronizedBuffer struct {
 	mu   sync.Mutex
-	data bytes.Buffer
+	data *headTailBuffer
 }
 
 func (buffer *synchronizedBuffer) Write(data []byte) (int, error) {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	return buffer.data.Write(data)
+	if buffer.data == nil {
+		buffer.data = newHeadTailBuffer(unifiedExecOutputMaxBytes)
+	}
+	buffer.data.pushChunk(data)
+	return len(data), nil
 }
 
-func (buffer *synchronizedBuffer) sliceFrom(offset int) ([]byte, int) {
+func (buffer *synchronizedBuffer) drain() *headTailBuffer {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	data := buffer.data.Bytes()
-	if offset > len(data) {
-		offset = len(data)
+	if buffer.data == nil {
+		return newHeadTailBuffer(unifiedExecOutputMaxBytes)
 	}
-	result := append([]byte(nil), data[offset:]...)
-	return result, len(data)
+	result := buffer.data
+	buffer.data = newHeadTailBuffer(unifiedExecOutputMaxBytes)
+	return result
 }
 
 type managedProcess struct {
@@ -63,7 +69,8 @@ type managedProcess struct {
 	startedAt  time.Time
 
 	interactionMu sync.Mutex
-	readOffset    int
+	deltaMu       sync.Mutex
+	emittedDeltas int
 	exitCode      int
 }
 
@@ -74,12 +81,24 @@ type processOutputWriter struct {
 
 func (writer processOutputWriter) Write(data []byte) (int, error) {
 	written, err := writer.process.output.Write(data)
-	if written > 0 && writer.process.emit != nil {
-		writer.process.emit(protocol.NewExecCommandOutputDelta(
-			writer.process.callID, writer.stream, data[:written],
-		))
+	if written > 0 {
+		writer.process.emitOutputDeltas(writer.stream, data[:written])
 	}
 	return written, err
+}
+
+func (process *managedProcess) emitOutputDeltas(stream string, data []byte) {
+	if process.emit == nil {
+		return
+	}
+	process.deltaMu.Lock()
+	defer process.deltaMu.Unlock()
+	for len(data) > 0 && process.emittedDeltas < maxExecOutputDeltasPerCall {
+		length := min(len(data), execOutputDeltaMaxBytes)
+		process.emit(protocol.NewExecCommandOutputDelta(process.callID, stream, data[:length]))
+		process.emittedDeltas++
+		data = data[length:]
+	}
 }
 
 // ProcessManager owns running unified-exec processes for one Session.
@@ -206,26 +225,27 @@ func (manager *ProcessManager) writeStdin(
 }
 
 type execResult struct {
-	ChunkID         string  `json:"chunk_id"`
-	SessionID       *int    `json:"session_id,omitempty"`
-	ExitCode        *int    `json:"exit_code,omitempty"`
-	WallTimeSeconds float64 `json:"wall_time_seconds"`
-	Output          string  `json:"output"`
-	OutputTruncated bool    `json:"output_truncated,omitempty"`
-	TTY             bool    `json:"tty,omitempty"`
-	PolicyRule      string  `json:"policy_rule,omitempty"`
+	ChunkID            string  `json:"chunk_id"`
+	SessionID          *int    `json:"session_id,omitempty"`
+	ExitCode           *int    `json:"exit_code,omitempty"`
+	WallTimeSeconds    float64 `json:"wall_time_seconds"`
+	Output             string  `json:"output"`
+	OriginalTokenCount int     `json:"original_token_count"`
+	OutputOmittedBytes int     `json:"output_omitted_bytes,omitempty"`
+	TTY                bool    `json:"tty,omitempty"`
+	PolicyRule         string  `json:"policy_rule,omitempty"`
 }
 
 func (process *managedProcess) result(outputLimit int, running bool) execResult {
-	data, nextOffset := process.output.sliceFrom(process.readOffset)
-	process.readOffset = nextOffset
-	text, truncated := truncateOutput(data, outputLimit)
+	collected := process.output.drain().withLimit(outputLimit)
+	text := string(collected.bytesWithOmissionMarker())
 	if process.tty {
 		text = ansiEscapePattern.ReplaceAllString(strings.ReplaceAll(text, "\r\n", "\n"), "")
 	}
 	result := execResult{
 		ChunkID: generateChunkID(), WallTimeSeconds: time.Since(process.startedAt).Seconds(), Output: text,
-		OutputTruncated: truncated, TTY: process.tty, PolicyRule: process.policyRule,
+		OriginalTokenCount: approxTokensFromByteCount(collected.totalBytes()),
+		OutputOmittedBytes: collected.omittedBytes, TTY: process.tty, PolicyRule: process.policyRule,
 	}
 	if running {
 		result.SessionID = &process.id
@@ -233,6 +253,10 @@ func (process *managedProcess) result(outputLimit int, running bool) execResult 
 		result.ExitCode = &process.exitCode
 	}
 	return result
+}
+
+func approxTokensFromByteCount(bytes int) int {
+	return (bytes + 3) / 4
 }
 
 func generateChunkID() string {
