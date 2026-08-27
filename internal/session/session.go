@@ -179,7 +179,7 @@ func (s *Session) requestCommandApproval(ctx context.Context, request tools.Appr
 		ID: turnID,
 		Msg: protocol.NewExecApprovalRequest(
 			request.CallID, turnID, request.Command, request.WorkingDirectory,
-			request.Reason, time.Now().UnixMilli(),
+			request.Reason, request.ProposedPrefix, time.Now().UnixMilli(),
 		),
 	})
 	select {

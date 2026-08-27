@@ -131,6 +131,21 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 | 5 | PTY 退出后关闭主端并等待输出收尾 | Wait → close PTY → output copy 完成 → close done |
 | 6 | 客户端看到终端属性 | FunctionCallOutput 带 `tty: true`，GUI 显示 TTY 标记 |
 
+## ExecPolicy 与 Session Prefix Rule
+
+![Codex ExecPolicy 与 Session Prefix Rule 流程图](./images/exec-policy-prefix-rule.png)
+
+可编辑源图位于 [`diagrams/exec-policy-prefix-rule.svg`](./diagrams/exec-policy-prefix-rule.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | Shell 命令解析为策略可检查的 argv | 简单命令解析引号与转义，复合 shell 标记为不可缓存 |
+| 2 | Policy 检查内置规则与当前环境规则 | 先检查内置只读命令，再检查 Session prefix rules |
+| 3 | 未匹配时生成 ExecApprovalRequirement | 返回 NeedsApproval、原因和可选 ProposedPrefix |
+| 4 | ApprovedForSession 写入 session approval cache | 将 argv token prefix 写入 Router 所属 Session 内存策略 |
+| 5 | 后续命令按 token 前缀匹配 | 使用切片逐 token 比较，不使用字符串 HasPrefix |
+| 6 | Session 结束清空缓存 | ExecPolicy 随 Session Router 销毁，不写入磁盘 |
+
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
@@ -139,12 +154,13 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 - Tool Router 当前按顺序执行；并行工具尚未实现。
 - PTY 当前使用固定 24×120 尺寸，尚未实现 resize、终端尺寸事件和平台远程执行器。
 - 当前没有 chunk_id；输出采用单一增量游标，尚未实现 Codex 的 head-tail buffer 与后台终端事件。
-- 审批当前只有 approved 与 denied，没有 session 级批准、prefix rule 和策略修订。
+- 审批支持 approved、approved_for_session 与 denied；尚未实现持久化 ApprovedExecpolicyAmendment。
+- Prefix rule 第一版只支持简单单命令；复合 shell 命令只允许批准一次。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
 - Codex 的 rollout 持久化、hooks、compaction、token 状态和启动预热尚未实现。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步
 
-继续对齐批准缓存与 ExecPolicy：加入 approved_for_session、prefix_rule 和可复用规则；随后补 PTY
-resize、终端生命周期事件和远程执行器抽象。
+继续对齐持久化 ExecPolicy amendment 与规则优先级；随后补 PTY resize、终端生命周期事件和
+远程执行器抽象。

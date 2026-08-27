@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 )
 
@@ -17,11 +16,10 @@ const (
 	maxOutputBytes     = 160 << 10
 )
 
-var readOnlyCommands = []string{"file", "find", "head", "ls", "pwd", "rg", "sed", "stat", "tail", "wc"}
-
 // ExecCommandExecutor launches commands through the Session process manager.
 type ExecCommandExecutor struct {
 	Manager *ProcessManager
+	Policy  *ExecPolicy
 }
 
 // Definition mirrors Codex's exec_command request shape for completed commands.
@@ -38,6 +36,7 @@ func (ExecCommandExecutor) Definition() Definition {
 				"yield_time_ms":     map[string]any{"type": "number", "description": "Timeout for this learning-stage synchronous command."},
 				"max_output_tokens": map[string]any{"type": "number", "description": "Approximate output token budget."},
 				"tty":               map[string]any{"type": "boolean", "description": "Allocate a pseudo-terminal for interactive programs."},
+				"prefix_rule":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Requested argv prefix for a reusable approval."},
 			},
 			"required":             []string{"cmd"},
 			"additionalProperties": false,
@@ -49,11 +48,12 @@ func (ExecCommandExecutor) Definition() Definition {
 // Execute resolves the turn environment, applies policy, and launches Seatbelt.
 func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invocation) (string, error) {
 	var arguments struct {
-		Command         string `json:"cmd"`
-		WorkingDir      string `json:"workdir"`
-		YieldTimeMS     int64  `json:"yield_time_ms"`
-		MaxOutputTokens int    `json:"max_output_tokens"`
-		TTY             bool   `json:"tty"`
+		Command         string   `json:"cmd"`
+		WorkingDir      string   `json:"workdir"`
+		YieldTimeMS     int64    `json:"yield_time_ms"`
+		MaxOutputTokens int      `json:"max_output_tokens"`
+		TTY             bool     `json:"tty"`
+		PrefixRule      []string `json:"prefix_rule"`
 	}
 	if err := json.Unmarshal([]byte(invocation.Call.Arguments), &arguments); err != nil {
 		return "", errors.New("arguments must be valid exec_command JSON")
@@ -62,8 +62,13 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 	if err != nil {
 		return "", err
 	}
-	approved := false
-	if reason := approvalReason(arguments.Command); reason != "" {
+	requirement, err := executor.Policy.Evaluate(arguments.Command, arguments.PrefixRule)
+	if err != nil {
+		return "", err
+	}
+	approved := requirement.MatchedRule != "" && strings.HasPrefix(requirement.MatchedRule, "session prefix:")
+	policyRule := requirement.MatchedRule
+	if requirement.NeedsApproval {
 		if invocation.Reviewer == nil {
 			return "", errors.New("command requires approval, but no approval reviewer is connected")
 		}
@@ -71,15 +76,24 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 			CallID:           invocation.Call.CallID,
 			Command:          arguments.Command,
 			WorkingDirectory: workingDirectory,
-			Reason:           reason,
+			Reason:           requirement.Reason,
+			ProposedPrefix:   requirement.ProposedRule,
 		})
 		if err != nil {
 			return "", err
 		}
 		if decision != ApprovalApproved {
-			return "command execution denied by user", nil
+			if decision == ApprovalApprovedForSession && len(requirement.ProposedRule) > 0 {
+				executor.Policy.AddSessionRule(requirement.ProposedRule)
+				approved = true
+				policyRule = "session prefix: " + strings.Join(requirement.ProposedRule, " ")
+			} else {
+				return "command execution denied by user", nil
+			}
+		} else {
+			approved = true
+			policyRule = "approved once"
 		}
-		approved = true
 	}
 
 	yield := clampYield(arguments.YieldTimeMS, false)
@@ -92,28 +106,7 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 	if err != nil {
 		return "", err
 	}
-	return executor.Manager.start(command, arguments.TTY, yield, outputLimit)
-}
-
-func approvalReason(command string) string {
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return "empty commands cannot be executed"
-	}
-	if strings.ContainsAny(command, ";|&><\n\r`") || strings.Contains(command, "$(") {
-		return "shell operators are outside the automatic read-only policy"
-	}
-	fields := strings.Fields(command)
-	if len(fields) == 0 || !slices.Contains(readOnlyCommands, filepath.Base(fields[0])) {
-		return fmt.Sprintf("%q is not in the automatic read-only policy", fields[0])
-	}
-	for _, field := range fields[1:] {
-		trimmed := strings.Trim(field, "'\"")
-		if filepath.IsAbs(trimmed) || trimmed == ".." || strings.HasPrefix(trimmed, "../") || strings.Contains(trimmed, "/../") {
-			return "the command references a path outside the workspace"
-		}
-	}
-	return ""
+	return executor.Manager.start(command, arguments.TTY, yield, outputLimit, policyRule)
 }
 
 func resolveWorkingDirectory(environment Environment, requested string) (string, error) {

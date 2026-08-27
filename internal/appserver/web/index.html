@@ -332,7 +332,7 @@
         prompts: [
           ['运行演示', '发起一次命令审批', '请执行审批演示，调用 exec_command 运行“pwd; echo approval-demo”，等待我批准或拒绝后再解释结果。'],
           ['PTY 终端', '运行交互式 PTY 演示', '请运行 PTY 演示，通过 tty 模式启动交互命令，再用 write_stdin 输入内容直到完成。'],
-          ['失败语义', '拒绝后如何继续', '当用户拒绝审批或沙箱阻止命令时，结果如何反馈给模型继续推理？']
+          ['会话规则', '演示本会话批准缓存', '请运行会话规则演示，调用 exec_command 执行 go version，并让我选择本会话批准。']
         ]
       },
       'MCP & Plugins': {
@@ -452,7 +452,8 @@
           ? `Session ID：${parsedOutput.session_id}`
           : `退出码：${parsedOutput.exit_code}`;
         const terminal = parsedOutput.tty ? ' · TTY' : '';
-        output.textContent = `${state}${terminal}${parsedOutput.output ? `\n输出：${parsedOutput.output}` : ''}`;
+        const policy = parsedOutput.policy_rule ? `\n策略：${parsedOutput.policy_rule}` : '';
+        output.textContent = `${state}${terminal}${policy}${parsedOutput.output ? `\n输出：${parsedOutput.output}` : ''}`;
       } else {
         output.textContent = `输出：${event.output}`;
       }
@@ -477,11 +478,15 @@
       const deny = document.createElement('button');
       deny.type = 'button';
       deny.textContent = '拒绝';
+      const approveSession = document.createElement('button');
+      approveSession.type = 'button';
+      approveSession.textContent = '本会话批准';
       const result = document.createElement('div');
       result.className = 'approval-result';
       const respond = async (decision) => {
         approve.disabled = true;
         deny.disabled = true;
+        approveSession.disabled = true;
         result.textContent = '正在提交决定…';
         try {
           const response = await fetch(`/api/approvals/${encodeURIComponent(event.call_id)}`, {
@@ -490,17 +495,30 @@
             body: JSON.stringify({ turn_id: event.turn_id, decision })
           });
           if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-          result.textContent = decision === 'approved' ? '已批准一次，命令继续执行' : '已拒绝，结果将返回模型';
+          if (decision === 'approved') result.textContent = '已批准一次，命令继续执行';
+          else if (decision === 'approved_for_session') result.textContent = '已批准本会话规则，后续匹配命令将自动执行';
+          else result.textContent = '已拒绝，结果将返回模型';
         } catch (error) {
           approve.disabled = false;
           deny.disabled = false;
+          approveSession.disabled = false;
           result.textContent = `提交失败：${error.message}`;
         }
       };
       approve.addEventListener('click', () => respond('approved'));
+      approveSession.addEventListener('click', () => respond('approved_for_session'));
       deny.addEventListener('click', () => respond('denied'));
-      actions.append(approve, deny);
-      card.append(title, reason, command, actions, result);
+      actions.append(approve);
+      if (event.proposed_prefix_rule?.length) {
+        const prefix = document.createElement('div');
+        prefix.className = 'approval-result';
+        prefix.textContent = `建议规则：[${event.proposed_prefix_rule.join(', ')}]`;
+        card.append(title, reason, command, prefix, actions, result);
+        actions.append(approveSession, deny);
+      } else {
+        actions.append(deny);
+        card.append(title, reason, command, actions, result);
+      }
       messages.append(card);
       card.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }

@@ -250,3 +250,66 @@ func TestChatRunsInteractivePTY(t *testing.T) {
 		t.Fatalf("answer = %q, want PTY response", answer.String())
 	}
 }
+
+func TestSessionApprovalRuleSkipsSecondPrompt(t *testing.T) {
+	handler := appserver.NewHandler(model.NewFakeClient())
+	defer handler.Close(context.Background())
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	runTurn := func(decision string) (int, string) {
+		response, err := http.Post(
+			server.URL+"/api/chat",
+			"application/json",
+			strings.NewReader(`{"prompt":"请运行会话规则演示"}`),
+		)
+		if err != nil {
+			t.Fatalf("Post() error = %v", err)
+		}
+		defer response.Body.Close()
+
+		approvalCount := 0
+		var answer strings.Builder
+		decoder := json.NewDecoder(response.Body)
+		for {
+			var event struct {
+				Type   string `json:"type"`
+				Delta  string `json:"delta"`
+				CallID string `json:"call_id"`
+				TurnID string `json:"turn_id"`
+			}
+			if err := decoder.Decode(&event); err == io.EOF {
+				break
+			} else if err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			if event.Type == "exec_approval_request" {
+				approvalCount++
+				responseDecision := decision
+				if responseDecision == "" {
+					responseDecision = "approved"
+				}
+				approvalResponse, err := http.Post(
+					server.URL+"/api/approvals/"+event.CallID,
+					"application/json",
+					strings.NewReader(`{"turn_id":"`+event.TurnID+`","decision":"`+responseDecision+`"}`),
+				)
+				if err != nil {
+					t.Fatalf("approval Post() error = %v", err)
+				}
+				approvalResponse.Body.Close()
+			}
+			answer.WriteString(event.Delta)
+		}
+		return approvalCount, answer.String()
+	}
+
+	firstApprovals, _ := runTurn("approved_for_session")
+	secondApprovals, secondAnswer := runTurn("")
+	if firstApprovals != 1 || secondApprovals != 0 {
+		t.Fatalf("approval counts = (%d, %d), want (1, 0)", firstApprovals, secondApprovals)
+	}
+	if !strings.Contains(secondAnswer, "session prefix: go version") {
+		t.Fatalf("second answer = %q, want matched session rule", secondAnswer)
+	}
+}

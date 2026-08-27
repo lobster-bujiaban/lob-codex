@@ -47,14 +47,15 @@ func (buffer *synchronizedBuffer) sliceFrom(offset int) ([]byte, int) {
 }
 
 type managedProcess struct {
-	id        int
-	command   *exec.Cmd
-	stdin     io.WriteCloser
-	terminal  *os.File
-	tty       bool
-	output    synchronizedBuffer
-	done      chan struct{}
-	startedAt time.Time
+	id         int
+	command    *exec.Cmd
+	stdin      io.WriteCloser
+	terminal   *os.File
+	tty        bool
+	policyRule string
+	output     synchronizedBuffer
+	done       chan struct{}
+	startedAt  time.Time
 
 	interactionMu sync.Mutex
 	readOffset    int
@@ -78,8 +79,12 @@ func (manager *ProcessManager) start(
 	tty bool,
 	yield time.Duration,
 	outputLimit int,
+	policyRule string,
 ) (string, error) {
-	process := &managedProcess{command: command, done: make(chan struct{}), startedAt: time.Now(), tty: tty}
+	process := &managedProcess{
+		command: command, done: make(chan struct{}), startedAt: time.Now(),
+		tty: tty, policyRule: policyRule,
+	}
 	outputDone := make(chan struct{})
 	if tty {
 		terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 120})
@@ -179,6 +184,7 @@ type execResult struct {
 	Output          string  `json:"output"`
 	OutputTruncated bool    `json:"output_truncated,omitempty"`
 	TTY             bool    `json:"tty,omitempty"`
+	PolicyRule      string  `json:"policy_rule,omitempty"`
 }
 
 func (process *managedProcess) result(outputLimit int, running bool) execResult {
@@ -190,7 +196,7 @@ func (process *managedProcess) result(outputLimit int, running bool) execResult 
 	}
 	result := execResult{
 		WallTimeSeconds: time.Since(process.startedAt).Seconds(), Output: text,
-		OutputTruncated: truncated, TTY: process.tty,
+		OutputTruncated: truncated, TTY: process.tty, PolicyRule: process.policyRule,
 	}
 	if running {
 		result.SessionID = &process.id

@@ -35,8 +35,9 @@ type Environment struct {
 type ApprovalDecision string
 
 const (
-	ApprovalApproved ApprovalDecision = "approved"
-	ApprovalDenied   ApprovalDecision = "denied"
+	ApprovalApproved           ApprovalDecision = "approved"
+	ApprovalApprovedForSession ApprovalDecision = "approved_for_session"
+	ApprovalDenied             ApprovalDecision = "denied"
 )
 
 // ApprovalRequest describes one command waiting for user review.
@@ -45,6 +46,7 @@ type ApprovalRequest struct {
 	Command          string
 	WorkingDirectory string
 	Reason           string
+	ProposedPrefix   []string
 }
 
 // ApprovalReviewer emits a request and blocks until a decision or cancellation.
@@ -71,6 +73,7 @@ type Router struct {
 	env       Environment
 	reviewer  ApprovalReviewer
 	processes *ProcessManager
+	policy    *ExecPolicy
 }
 
 // SetApprovalReviewer connects tool execution to the owning Session.
@@ -82,7 +85,10 @@ func (router *Router) SetApprovalReviewer(reviewer ApprovalReviewer) {
 
 // NewRouter creates an empty tool router.
 func NewRouter(environment Environment) *Router {
-	return &Router{registry: make(map[string]Executor), env: environment, processes: NewProcessManager()}
+	return &Router{
+		registry: make(map[string]Executor), env: environment,
+		processes: NewProcessManager(), policy: NewExecPolicy(),
+	}
 }
 
 // NewDefaultRouter creates the currently implemented Codex learning tool set.
@@ -90,7 +96,7 @@ func NewDefaultRouter(environment Environment) *Router {
 	router := NewRouter(environment)
 	for _, executor := range []Executor{
 		EchoExecutor{},
-		ExecCommandExecutor{Manager: router.processes},
+		ExecCommandExecutor{Manager: router.processes, Policy: router.policy},
 		WriteStdinExecutor{Manager: router.processes},
 	} {
 		if err := router.Register(executor); err != nil {

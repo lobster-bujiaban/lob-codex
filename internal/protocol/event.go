@@ -29,6 +29,7 @@ type ExecApprovalRequestEvent struct {
 	CWD                string   `json:"cwd"`
 	Reason             string   `json:"reason,omitempty"`
 	AvailableDecisions []string `json:"available_decisions"`
+	ProposedPrefix     []string `json:"proposed_prefix_rule,omitempty"`
 }
 
 // ToolCallStartedEvent exposes a routed model tool invocation to clients.
@@ -107,13 +108,21 @@ func NewToolCallCompleted(callID, name, output string) EventMsg {
 	}
 }
 
-func NewExecApprovalRequest(callID, turnID, command, cwd, reason string, startedAtMS int64) EventMsg {
+func NewExecApprovalRequest(
+	callID, turnID, command, cwd, reason string,
+	proposedPrefix []string,
+	startedAtMS int64,
+) EventMsg {
+	availableDecisions := []string{"approved", "denied"}
+	if len(proposedPrefix) > 0 {
+		availableDecisions = []string{"approved", "approved_for_session", "denied"}
+	}
 	return EventMsg{
 		Type: "exec_approval_request",
 		ExecApprovalRequest: &ExecApprovalRequestEvent{
 			CallID: callID, TurnID: turnID, StartedAtMS: startedAtMS,
 			Command: []string{command}, CWD: cwd, Reason: reason,
-			AvailableDecisions: []string{"approved", "denied"},
+			AvailableDecisions: availableDecisions, ProposedPrefix: proposedPrefix,
 		},
 	}
 }

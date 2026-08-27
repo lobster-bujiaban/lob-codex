@@ -106,6 +106,17 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
 			return
 		}
+		if strings.Contains(input, "会话规则演示") {
+			item := protocol.ResponseItem{
+				Type: "function_call", ID: "fc_fake_session_rule", CallID: "call_fake_session_rule",
+				Name: "exec_command", Arguments: `{"cmd":"go version"}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
+		}
 		if strings.Contains(input, "工作区") || strings.Contains(input, "列出文件") {
 			item := protocol.ResponseItem{
 				Type:      "function_call",

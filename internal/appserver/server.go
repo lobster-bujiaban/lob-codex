@@ -28,17 +28,18 @@ type Handler struct {
 }
 
 type chatStreamEvent struct {
-	Type      string   `json:"type"`
-	Delta     string   `json:"delta,omitempty"`
-	CallID    string   `json:"call_id,omitempty"`
-	Name      string   `json:"name,omitempty"`
-	Arguments string   `json:"arguments,omitempty"`
-	Output    string   `json:"output,omitempty"`
-	Message   string   `json:"message,omitempty"`
-	TurnID    string   `json:"turn_id,omitempty"`
-	Command   []string `json:"command,omitempty"`
-	CWD       string   `json:"cwd,omitempty"`
-	Reason    string   `json:"reason,omitempty"`
+	Type           string   `json:"type"`
+	Delta          string   `json:"delta,omitempty"`
+	CallID         string   `json:"call_id,omitempty"`
+	Name           string   `json:"name,omitempty"`
+	Arguments      string   `json:"arguments,omitempty"`
+	Output         string   `json:"output,omitempty"`
+	Message        string   `json:"message,omitempty"`
+	TurnID         string   `json:"turn_id,omitempty"`
+	Command        []string `json:"command,omitempty"`
+	CWD            string   `json:"cwd,omitempty"`
+	Reason         string   `json:"reason,omitempty"`
+	ProposedPrefix []string `json:"proposed_prefix_rule,omitempty"`
 }
 
 // NewHandler creates the GUI and chat API using one long-lived model session.
@@ -65,8 +66,10 @@ func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Requ
 		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
 		return
 	}
-	if input.Decision != tools.ApprovalApproved && input.Decision != tools.ApprovalDenied {
-		http.Error(writer, "decision must be approved or denied", http.StatusBadRequest)
+	if input.Decision != tools.ApprovalApproved &&
+		input.Decision != tools.ApprovalApprovedForSession &&
+		input.Decision != tools.ApprovalDenied {
+		http.Error(writer, "invalid approval decision", http.StatusBadRequest)
 		return
 	}
 	response := session.ExecApprovalResponse{
@@ -171,6 +174,7 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 			if err := writeChatStreamEvent(writer, chatStreamEvent{
 				Type: "exec_approval_request", CallID: approval.CallID, TurnID: approval.TurnID,
 				Command: approval.Command, CWD: approval.CWD, Reason: approval.Reason,
+				ProposedPrefix: approval.ProposedPrefix,
 			}); err != nil {
 				return wrote, err
 			}
