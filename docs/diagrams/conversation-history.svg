@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#102747"/>
+      <stop offset="1" stop-color="#0a1830"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#020817" flood-opacity=".35"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#f9733d"/>
+    </marker>
+    <style>
+      .title{font:700 36px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#f8fafc}
+      .subtitle{font:400 17px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#94a3b8}
+      .lane{font:700 18px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#dbeafe}
+      .node-title{font:700 18px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#f8fafc}
+      .node-text{font:400 14px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#b8c5d8}
+      .item{font:600 14px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#dbeafe}
+      .note-title{font:700 17px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#172d4f}
+      .note{font:400 14px Inter,-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;fill:#40536e}
+    </style>
+  </defs>
+  <rect width="1400" height="900" fill="url(#bg)"/>
+  <circle cx="1280" cy="95" r="180" fill="#f9733d" opacity=".07"/>
+  <circle cx="95" cy="810" r="220" fill="#38bdf8" opacity=".05"/>
+
+  <text x="70" y="72" class="title">Conversation History → Step Prompt 主链</text>
+  <text x="70" y="105" class="subtitle">按 Codex 源码顺序：先记录输入，再为 Step 创建快照，完成项立即回写</text>
+
+  <g transform="translate(70 150)">
+    <rect width="260" height="500" rx="24" fill="#132d50" stroke="#315078"/>
+    <text x="28" y="45" class="lane">Turn 输入层</text>
+    <g transform="translate(25 90)" filter="url(#shadow)">
+      <rect width="210" height="120" rx="18" fill="#1b3a63" stroke="#3f638f"/>
+      <text x="20" y="38" class="node-title">TurnInput</text>
+      <text x="20" y="70" class="node-text">用户提交文本</text>
+      <text x="20" y="94" class="node-text">Start / 下一轮输入</text>
+    </g>
+    <g transform="translate(25 285)" filter="url(#shadow)">
+      <rect width="210" height="130" rx="18" fill="#1b3a63" stroke="#f9733d"/>
+      <text x="20" y="38" class="node-title">NewUserMessage</text>
+      <text x="20" y="70" class="item">role: user</text>
+      <text x="20" y="96" class="item">type: input_text</text>
+    </g>
+    <path d="M130 210V275" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+  </g>
+
+  <g transform="translate(410 150)">
+    <rect width="330" height="500" rx="24" fill="#132d50" stroke="#315078"/>
+    <text x="28" y="45" class="lane">Session 状态层</text>
+    <g transform="translate(25 82)" filter="url(#shadow)">
+      <rect width="280" height="325" rx="18" fill="#172f52" stroke="#38bdf8"/>
+      <text x="22" y="40" class="node-title">ConversationHistory</text>
+      <text x="22" y="67" class="node-text">oldest → newest</text>
+      <rect x="20" y="92" width="240" height="54" rx="12" fill="#213f67"/>
+      <text x="35" y="125" class="item">① user: 第一轮问题</text>
+      <rect x="20" y="158" width="240" height="54" rx="12" fill="#213f67"/>
+      <text x="35" y="191" class="item">② assistant: 第一轮回答</text>
+      <rect x="20" y="224" width="240" height="54" rx="12" fill="#2b466b" stroke="#f9733d"/>
+      <text x="35" y="257" class="item">③ user: 当前追问</text>
+    </g>
+    <text x="28" y="448" class="node-text">RecordItems：改变 Session 状态</text>
+    <text x="28" y="475" class="node-text">ForPrompt：只返回隔离快照</text>
+  </g>
+
+  <g transform="translate(820 150)">
+    <rect width="510" height="500" rx="24" fill="#132d50" stroke="#315078"/>
+    <text x="28" y="45" class="lane">Step 与 Model 层</text>
+    <g transform="translate(25 82)" filter="url(#shadow)">
+      <rect width="210" height="130" rx="18" fill="#1b3a63" stroke="#38bdf8"/>
+      <text x="20" y="38" class="node-title">ForPrompt()</text>
+      <text x="20" y="70" class="node-text">克隆完整历史</text>
+      <text x="20" y="96" class="node-text">作为本 Step 输入快照</text>
+    </g>
+    <g transform="translate(275 82)" filter="url(#shadow)">
+      <rect width="210" height="130" rx="18" fill="#1b3a63" stroke="#a78bfa"/>
+      <text x="20" y="38" class="node-title">Responses API</text>
+      <text x="20" y="70" class="item">input: ResponseItem[]</text>
+      <text x="20" y="96" class="node-text">流式返回模型事件</text>
+    </g>
+    <g transform="translate(150 290)" filter="url(#shadow)">
+      <rect width="210" height="130" rx="18" fill="#1b3a63" stroke="#f9733d"/>
+      <text x="20" y="38" class="node-title">OutputItemDone</text>
+      <text x="20" y="70" class="item">role: assistant</text>
+      <text x="20" y="96" class="item">type: output_text</text>
+    </g>
+    <path d="M235 147H265" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M380 222V270H255V280" stroke="#f9733d" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  </g>
+
+  <path d="M330 435H400" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M740 305H810" stroke="#f9733d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M970 570V690H575V660" stroke="#f9733d" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text x="780" y="716" class="subtitle" fill="#f9733d">完成项立即回写，成为下一 Turn 的上下文</text>
+
+  <g transform="translate(70 760)">
+    <rect width="1260" height="92" rx="20" fill="#fff8ee"/>
+    <text x="28" y="36" class="note-title">核心思想</text>
+    <text x="28" y="64" class="note">History 属于长生命周期 Session；Step 不维护第二份上下文，只读取一次快照。这样公开事件、模型输入与后续工具结果都共享同一事实顺序。</text>
+  </g>
+</svg>

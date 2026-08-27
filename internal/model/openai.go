@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 const defaultOpenAIBaseURL = "https://api.openai.com/v1"
@@ -128,8 +130,9 @@ func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<
 		}
 
 		var event struct {
-			Type  string `json:"type"`
-			Delta string `json:"delta"`
+			Type  string                 `json:"type"`
+			Delta string                 `json:"delta"`
+			Item  *protocol.ResponseItem `json:"item"`
 			Error *struct {
 				Message string `json:"message"`
 			} `json:"error"`
@@ -141,6 +144,10 @@ func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<
 		switch event.Type {
 		case "response.output_text.delta":
 			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputTextDelta, Delta: event.Delta}) {
+				return ctx.Err()
+			}
+		case "response.output_item.done":
+			if event.Item != nil && !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: event.Item}) {
 				return ctx.Err()
 			}
 		case "error":

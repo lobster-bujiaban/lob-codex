@@ -15,9 +15,9 @@
 
 | 能力 | Codex 源码 | LOB Codex | 状态 | 说明 |
 |---|---|---|---|---|
-| 协议事件 | `codex-rs/protocol` | `internal/protocol` | 部分对齐 | 已拆分 `ResponseEvent` 与公开 `Event/EventMsg`，实现 TurnStarted、文本 Delta、Error、TurnComplete、TurnAborted |
-| Session/Turn | `codex-rs/core/src/session` | `internal/session` | 部分对齐 | 已还原 Submission 通道、后台 submission loop、RegularTask、TurnContext、内部 StepContext 和任务结束生命周期 |
-| 模型客户端 | `codex-rs/core` 模型客户端 | `internal/model` | 部分对齐 | 已接 Responses SSE 并由 Turn 映射公开事件；请求构造、重试和完整 ResponseItem 尚未对齐 |
+| 协议事件 | `codex-rs/protocol` | `internal/protocol` | 部分对齐 | 已拆分 `ResponseEvent` 与公开 `Event/EventMsg`，并实现 Message 类型的 `ResponseItem` 子集 |
+| Session/Turn | `codex-rs/core/src/session` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 Conversation History 的采样与回写主链 |
+| 模型客户端 | `codex-rs/core` 模型客户端 | `internal/model` | 部分对齐 | Responses API 现接收 `ResponseItem[]` 并消费文本 Delta、OutputItemDone、Completed；重试和其他 Item 类型尚未对齐 |
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 未开始 | 必须复现注册、路由、审批和结果回传流程 |
 | 命令执行 | `codex-rs/core/src/exec.rs` | `internal/execution` | 未开始 | 必须保留取消、超时、输出截断和沙箱边界 |
 | MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
@@ -40,16 +40,30 @@
 | 7 | `run_sampling_request` 消费 `ResponseEvent` | `runSamplingRequest` 消费内部 `ResponseEvent` |
 | 8 | `on_task_finished` 发送终态事件 | `onTaskFinished` 发送 TurnComplete/TurnAborted |
 
+## Conversation History 调用链
+
+![Codex Conversation History 主链流程图](./images/conversation-history.png)
+
+可编辑源图位于 [`diagrams/conversation-history.svg`](./diagrams/conversation-history.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | `record_pending_input` 将 Turn 输入转换并记录为 `ResponseItem` | `runTurn` 将 `TurnInput` 转为用户 `ResponseItem` 后调用 `RecordItems` |
+| 2 | `clone_history().for_prompt(...)` 返回当前 Step 的模型输入快照 | `ConversationHistory.ForPrompt()` 返回隔离切片 |
+| 3 | Model Client 接收 `Vec<ResponseItem>` | `model.Request.Input` 接收 `[]protocol.ResponseItem` |
+| 4 | `ResponseEvent::OutputItemDone` 交给输出处理并记录 | `ResponseOutputItemDone` 到达时立即回写 Conversation History |
+| 5 | 下一 Turn 再次从完整 History 构造 prompt | 长生命周期 Session 保留历史并向下一次请求发送完整数组 |
+
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
-- Conversation History、`ResponseItem` 和每次采样的完整 prompt 构造尚未实现，因此 GUI 仍是单轮模型上下文。
+- `ResponseItem` 当前只实现文本 Message；Reasoning、工具调用、图片和音频内容将在对应阶段补齐。
+- Conversation History 尚未实现 Codex 的标准化、截断策略、token 统计、rollout 持久化与恢复。
 - 工具调用尚未产生 `needs_follow_up`，循环结构已保留但不会进入第二次采样。
 - Codex 的 rollout 持久化、hooks、compaction、token 状态和启动预热尚未实现。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步
 
-继续对齐 Codex 的 Conversation History 与 `ResponseItem`：Turn 输入先记录到会话历史，每个
-Step 从历史构造采样请求，模型完成项再写回历史。完成多轮上下文后，再进入 ToolRouter 和
-`needs_follow_up` 工具循环。
+进入 ToolRouter 和 `needs_follow_up` 工具循环：扩展 `ResponseItem` 的 FunctionCall 与
+FunctionCallOutput，按 Codex 的 OutputItemDone → 路由 → 执行 → 回写历史 → 再采样顺序实现。

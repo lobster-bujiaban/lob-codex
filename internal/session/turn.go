@@ -24,11 +24,13 @@ func (s *Session) runRegularTask(
 func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input []TurnInput) taskResult {
 	var lastAgentMessage *string
 	var timeToFirstToken *int64
-	nextInput := input
+	for _, item := range input {
+		s.history.RecordItems(protocol.NewUserMessage(item.Text))
+	}
 
 	for {
 		stepContext := s.captureStepContext(turnContext)
-		result, err := s.runSamplingRequest(ctx, stepContext, nextInput)
+		result, err := s.runSamplingRequest(ctx, stepContext, s.history.ForPrompt())
 		if err != nil {
 			s.sendEvent(turnContext, protocol.NewError(err.Error()))
 			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken, Err: err}
@@ -40,7 +42,6 @@ func (s *Session) runTurn(ctx context.Context, turnContext *TurnContext, input [
 		if !result.NeedsFollowUp {
 			return taskResult{LastAgentMessage: lastAgentMessage, TimeToFirstToken: timeToFirstToken}
 		}
-		nextInput = nil
 	}
 }
 
@@ -51,17 +52,19 @@ func (s *Session) captureStepContext(turnContext *TurnContext) *StepContext {
 func (s *Session) runSamplingRequest(
 	ctx context.Context,
 	stepContext *StepContext,
-	input []TurnInput,
+	input []protocol.ResponseItem,
 ) (samplingRequestResult, error) {
 	if len(input) == 0 {
-		return samplingRequestResult{}, errors.New("follow-up sampling input is not implemented")
+		return samplingRequestResult{}, errors.New("conversation history is empty")
 	}
 
-	stream := s.client.Stream(ctx, model.Request{Input: input[0].Text})
+	stream := s.client.Stream(ctx, model.Request{Input: input})
 	events := stream.Events
 	errorsChannel := stream.Errors
 	var output strings.Builder
 	var timeToFirstToken *int64
+	var completedItem *protocol.ResponseItem
+	recordedOutputItem := false
 	completed := false
 
 	for events != nil || errorsChannel != nil {
@@ -84,6 +87,13 @@ func (s *Session) runSamplingRequest(
 					stepContext.Turn,
 					protocol.NewAgentMessageContentDelta(stepContext.Turn.SubID, event.Delta),
 				)
+			case model.ResponseOutputItemDone:
+				if event.Item != nil {
+					item := *event.Item
+					completedItem = &item
+					s.history.RecordItems(item)
+					recordedOutputItem = true
+				}
 			case model.ResponseCompleted:
 				completed = true
 			}
@@ -102,6 +112,16 @@ func (s *Session) runSamplingRequest(
 		return samplingRequestResult{}, errors.New("model stream closed before response.completed")
 	}
 	message := output.String()
+	if completedItem == nil {
+		item := protocol.NewAssistantMessage(message)
+		completedItem = &item
+	}
+	if !recordedOutputItem {
+		s.history.RecordItems(*completedItem)
+	}
+	if completedItem.Role == "assistant" && completedItem.Text() != "" {
+		message = completedItem.Text()
+	}
 	return samplingRequestResult{
 		NeedsFollowUp:    false,
 		LastAgentMessage: &message,

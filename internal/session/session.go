@@ -16,10 +16,11 @@ import (
 
 // Session owns the model client, active task, and public event stream.
 type Session struct {
-	client model.Client
-	events chan protocol.Event
-	ctx    context.Context
-	cancel context.CancelFunc
+	client  model.Client
+	events  chan protocol.Event
+	ctx     context.Context
+	cancel  context.CancelFunc
+	history ConversationHistory
 
 	activeMu sync.Mutex
 	active   *runningTask

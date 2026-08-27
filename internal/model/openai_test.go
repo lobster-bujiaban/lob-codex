@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 func TestOpenAIClientStreamsTextDeltas(t *testing.T) {
@@ -27,7 +29,7 @@ func TestOpenAIClientStreamsTextDeltas(t *testing.T) {
 		t.Fatalf("NewOpenAIClient() error = %v", err)
 	}
 
-	stream := client.Stream(context.Background(), Request{Input: "hi"})
+	stream := client.Stream(context.Background(), Request{Input: []protocol.ResponseItem{protocol.NewUserMessage("hi")}})
 	var events []ResponseEvent
 	for event := range stream.Events {
 		events = append(events, event)

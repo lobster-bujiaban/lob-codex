@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"strings"
+
+	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 // FakeClient is a deterministic model implementation for local learning and tests.
@@ -22,7 +24,14 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 		defer close(events)
 		defer close(errors)
 
-		response := "Fake model: " + strings.TrimSpace(request.Input)
+		input := ""
+		for index := len(request.Input) - 1; index >= 0; index-- {
+			if request.Input[index].Role == "user" {
+				input = request.Input[index].Text()
+				break
+			}
+		}
+		response := "Fake model: " + input
 		chunks := strings.Fields(response)
 
 		for index, chunk := range chunks {
@@ -32,6 +41,10 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputTextDelta, Delta: chunk}) {
 				return
 			}
+		}
+		item := protocol.NewAssistantMessage(response)
+		if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+			return
 		}
 		sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
 	}()
