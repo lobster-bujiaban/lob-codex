@@ -86,3 +86,13 @@ go run ./cmd/lob-codex
 
 当前最小 GUI 包含：单轮消息输入、流式回复、错误展示和 Enter 发送。API Key、模型配置、
 多轮会话与工具调用界面将在后续阶段逐步加入。
+
+## 交流与联系
+
+对实现细节有疑问、发现问题或想交流 Agent Harness，可以扫码私信：
+
+<p align="center">
+  <img src="./docs/images/wechat-private-message-qr.png" alt="虾哥不加班微信私信二维码" width="220">
+</p>
+
+也欢迎通过 [GitHub Issues](https://github.com/lobster-bujiaban/lob-codex/issues) 提交可复现的问题和建议。
