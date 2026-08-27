@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LOB Codex</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0d1117; color: #e6edf3; }
+    main { width: min(880px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 32px; }
+    header { margin-bottom: 32px; }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.02em; }
+    .subtitle { margin: 0; color: #8b949e; }
+    #messages { display: grid; gap: 16px; min-height: 52vh; align-content: start; }
+    .message { max-width: 82%; padding: 14px 16px; border: 1px solid #30363d; border-radius: 14px; line-height: 1.65; white-space: pre-wrap; }
+    .user { justify-self: end; background: #1f6feb; border-color: #388bfd; color: white; }
+    .assistant { justify-self: start; background: #161b22; }
+    .error { border-color: #f85149; color: #ff7b72; }
+    form { position: sticky; bottom: 20px; display: flex; gap: 10px; margin-top: 24px; padding: 10px; background: rgba(22, 27, 34, .94); border: 1px solid #30363d; border-radius: 16px; backdrop-filter: blur(12px); }
+    textarea { flex: 1; min-height: 48px; max-height: 180px; resize: vertical; padding: 12px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+    button { align-self: end; height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: #238636; color: white; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .empty { color: #8b949e; text-align: center; padding-top: 100px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>LOB Codex</h1>
+      <p class="subtitle">最小 Go Agent Harness · Responses API 流式对话</p>
+    </header>
+    <section id="messages"><p class="empty">输入一条消息，验证 LLM 调用链路。</p></section>
+    <form id="chat-form">
+      <textarea id="prompt" placeholder="给 LOB Codex 发送消息…" required></textarea>
+      <button id="send" type="submit">发送</button>
+    </form>
+  </main>
+  <script>
+    const form = document.querySelector('#chat-form');
+    const prompt = document.querySelector('#prompt');
+    const send = document.querySelector('#send');
+    const messages = document.querySelector('#messages');
+
+    function addMessage(role, text = '') {
+      messages.querySelector('.empty')?.remove();
+      const element = document.createElement('div');
+      element.className = `message ${role}`;
+      element.textContent = text;
+      messages.append(element);
+      element.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return element;
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = prompt.value.trim();
+      if (!text || send.disabled) return;
+      addMessage('user', text);
+      const assistant = addMessage('assistant');
+      prompt.value = '';
+      send.disabled = true;
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text })
+        });
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          assistant.textContent += decoder.decode(value, { stream: true });
+          assistant.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      } catch (error) {
+        assistant.classList.add('error');
+        assistant.textContent = error.message;
+      } finally {
+        send.disabled = false;
+        prompt.focus();
+      }
+    });
+
+    prompt.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>

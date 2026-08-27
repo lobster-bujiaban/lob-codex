@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -59,7 +60,7 @@ func (r *Runner) Run(ctx context.Context, input string) error {
 
 // ValidateInput rejects input that cannot form a meaningful model request.
 func ValidateInput(input string) error {
-	if input == "" {
+	if strings.TrimSpace(input) == "" {
 		return errors.New("prompt must not be empty")
 	}
 	return nil

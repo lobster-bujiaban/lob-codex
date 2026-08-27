@@ -63,3 +63,23 @@ go run ./cmd/lob-codex "你好，LOB Codex"
 go test ./...
 go vet ./...
 ```
+
+## 最小 GUI + 真实 LLM
+
+设置 Responses API 模型配置后启动 Web 服务：
+
+```bash
+export LOB_CODEX_API_KEY="你的 API Key"
+export LOB_CODEX_MODEL="你的模型名称"
+# 可选，默认为 https://api.openai.com/v1
+export LOB_CODEX_BASE_URL="https://api.openai.com/v1"
+
+go run ./cmd/lob-codex serve
+```
+
+浏览器打开 <http://127.0.0.1:8787>。API Key 只保留在服务端环境变量中，不会发送到浏览器。
+
+也兼容 `OPENAI_API_KEY`、`OPENAI_MODEL` 和 `OPENAI_BASE_URL` 环境变量。
+
+当前最小 GUI 包含：单轮消息输入、流式回复、错误展示和 Enter 发送。API Key、模型配置、
+多轮会话与工具调用界面将在后续阶段逐步加入。
