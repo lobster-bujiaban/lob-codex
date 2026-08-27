@@ -23,7 +23,7 @@ const usage = `LOB Codex - a coding agent harness built step by step in Go
 Usage:
   lob-codex
   lob-codex <prompt>
-  lob-codex serve [-addr 127.0.0.1:0]
+  lob-codex serve [-addr 127.0.0.1:53878]
 
 Example:
   lob-codex "explain this repository"
@@ -82,7 +82,7 @@ func main() {
 
 func serve(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
-	address := flags.String("addr", "127.0.0.1:0", "HTTP listen address; port 0 selects a free port")
+	address := flags.String("addr", "127.0.0.1:53878", "HTTP listen address")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

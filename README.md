@@ -77,9 +77,8 @@ export LOB_CODEX_BASE_URL="https://api.openai.com/v1"
 go run ./cmd/lob-codex
 ```
 
-服务启动后会打印实际 GUI 地址，例如 `http://127.0.0.1:54321`。默认由系统自动选择空闲端口，
-也可以使用 `-addr 127.0.0.1:9000` 显式指定。API Key 只保留在服务端环境变量中，
-不会发送到浏览器。
+浏览器打开 <http://127.0.0.1:53878>。也可以使用 `-addr 127.0.0.1:9000`
+临时覆盖默认地址。API Key 只保留在服务端环境变量中，不会发送到浏览器。
 
 也兼容 `OPENAI_API_KEY`、`OPENAI_MODEL` 和 `OPENAI_BASE_URL` 环境变量。
 程序启动时会自动读取当前目录的 `.env`，已有系统环境变量优先级更高。
