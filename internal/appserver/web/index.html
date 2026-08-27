@@ -72,6 +72,14 @@
       font: 700 10px/1 var(--font);
     }
     .concept.active .concept-index { border-color: var(--orange); background: var(--orange); color: #fff; }
+    .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+    .thread-header .section-label { margin: 0; }
+    .new-thread { border: 0; background: transparent; color: var(--orange-dark); font-size: 11px; cursor: pointer; }
+    .thread-list { display: grid; gap: 5px; margin-top: 8px; max-height: 150px; overflow-y: auto; }
+    .thread-item { padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+    .thread-item:hover, .thread-item.active { border-color: var(--line); background: #f0ebe3; color: var(--ink); }
+    .thread-item strong, .thread-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .thread-item strong { font-size: 11px; }.thread-item span { margin-top: 3px; font-size: 9px; color: var(--muted); }
 
     .sidebar-bottom { margin-top: auto; }
     .social-title { margin: 0 0 8px 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
@@ -228,6 +236,9 @@
         <button class="concept" type="button" data-topic="MCP & Plugins"><span class="concept-index">05</span><span>MCP & Plugins</span></button>
       </nav>
 
+      <div class="thread-header"><p class="section-label">对话工作区</p><button id="new-thread" class="new-thread" type="button">＋ 新建</button></div>
+      <div id="thread-list" class="thread-list"></div>
+
       <div class="sidebar-bottom">
         <p class="social-title">关注「虾哥不加班」</p>
         <div class="social-grid">
@@ -246,7 +257,7 @@
 
     <section class="stage">
       <header class="topbar">
-        <div class="page-title"><span>原理实验台 / 当前会话</span><strong id="page-topic">Session / Turn / Step</strong></div>
+        <div class="page-title"><span id="workspace-path">原理实验台 / 当前工作区</span><strong id="page-topic">Session / Turn / Step</strong></div>
         <div class="topbar-actions">
           <button id="home-button" class="home-button" type="button">返回首页</button>
           <div class="status-pill"><span class="status-dot"></span>Responses API 已连接</div>
@@ -298,6 +309,10 @@
     const messages = document.querySelector('#messages');
     const welcomeTemplate = messages.querySelector('.welcome').cloneNode(true);
     const pageTopic = document.querySelector('#page-topic');
+    const workspacePath = document.querySelector('#workspace-path');
+    const threadList = document.querySelector('#thread-list');
+    let activeThreadID = 'current-workspace';
+    let threads = [];
     const topicProfiles = {
       'Session / Turn / Step': {
         title: '不只看源码，把 Codex 跑明白',
@@ -382,6 +397,56 @@
       });
       document.querySelector('.conversation').scrollTop = 0;
       prompt.focus();
+    }
+
+    function renderThreads() {
+      threadList.replaceChildren();
+      threads.forEach((thread) => {
+        const button = document.createElement('button');
+        button.className = `thread-item${thread.id === activeThreadID ? ' active' : ''}`;
+        button.type = 'button';
+        const name = document.createElement('strong');
+        name.textContent = thread.workspace_root.split('/').filter(Boolean).pop() || thread.workspace_root;
+        const path = document.createElement('span');
+        path.textContent = thread.workspace_root;
+        button.append(name, path);
+        button.addEventListener('click', () => selectThread(thread.id));
+        threadList.append(button);
+      });
+      const active = threads.find((thread) => thread.id === activeThreadID);
+      workspacePath.textContent = active ? `工作区 / ${active.workspace_root}` : '工作区缺失';
+    }
+
+    function selectThread(threadID) {
+      activeRequest?.abort();
+      activeThreadID = threadID;
+      renderThreads();
+      showHome();
+    }
+
+    async function loadThreads() {
+      const response = await fetch('/api/threads');
+      if (!response.ok) throw new Error(await response.text());
+      threads = (await response.json()).threads;
+      if (!threads.some((thread) => thread.id === activeThreadID)) activeThreadID = threads[0]?.id;
+      renderThreads();
+    }
+
+    async function createThread() {
+      const current = threads.find((thread) => thread.id === activeThreadID);
+      const workspaceRoot = window.prompt('请输入新对话的工作区绝对路径', current?.workspace_root || '');
+      if (!workspaceRoot) return;
+      const response = await fetch('/api/threads', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_root: workspaceRoot })
+      });
+      if (!response.ok) {
+        window.alert((await response.text()) || `HTTP ${response.status}`);
+        return;
+      }
+      const thread = await response.json();
+      threads.unshift(thread);
+      selectThread(thread.id);
     }
 
     function removeWelcome() {
@@ -489,7 +554,7 @@
       toolCall.row.append(output);
     }
 
-    function addApproval(event) {
+    function addApproval(event, threadID) {
       const card = document.createElement('div');
       card.className = 'approval-card';
       const title = document.createElement('h3');
@@ -525,7 +590,7 @@
           const response = await fetch(`/api/approvals/${encodeURIComponent(event.call_id)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ turn_id: event.turn_id, decision })
+            body: JSON.stringify({ turn_id: event.turn_id, thread_id: threadID, decision })
           });
           if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
           if (decision === 'approved') result.textContent = '已批准一次，命令继续执行';
@@ -562,6 +627,7 @@
     async function submitPrompt(text) {
       if (!text || send.disabled) return;
       const request = new AbortController();
+      const requestThreadID = activeThreadID;
       activeRequest = request;
       addMessage('user', text);
       let assistant;
@@ -574,7 +640,7 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: text }),
+          body: JSON.stringify({ prompt: text, thread_id: requestThreadID }),
           signal: request.signal
         });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
@@ -599,7 +665,7 @@
           } else if (event.type === 'terminal_interaction') {
             addTerminalInteraction(toolCalls, event);
           } else if (event.type === 'exec_approval_request') {
-            addApproval(event);
+            addApproval(event, requestThreadID);
           } else if (event.type === 'error') {
             throw new Error(event.message);
           }
@@ -647,6 +713,7 @@
     bindPromptChips();
     document.querySelector('#home-brand').addEventListener('click', () => showHome());
     document.querySelector('#home-button').addEventListener('click', () => showHome());
+    document.querySelector('#new-thread').addEventListener('click', createThread);
     document.querySelectorAll('.concept').forEach((button) => {
       button.addEventListener('click', () => showHome(button.dataset.topic));
     });
@@ -674,6 +741,7 @@
     qrDialog.addEventListener('click', (event) => {
       if (event.target === qrDialog) qrDialog.close();
     });
+    loadThreads().catch((error) => { workspacePath.textContent = `工作区加载失败：${error.message}`; });
   </script>
 </body>
 </html>

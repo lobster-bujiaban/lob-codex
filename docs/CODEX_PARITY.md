@@ -21,7 +21,7 @@
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
 | 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、Seatbelt、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction 与 write_stdin |
 | MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
-| App Server | `codex-rs/app-server` | `internal/appserver` | 原型 | 服务现持有长生命周期 Session；线程路由和多会话协议尚未实现 |
+| App Server | `codex-rs/app-server` | `internal/appserver` | 部分对齐 | 已实现 thread start/list、thread_id 路由、独立 Session 和 workspace 元数据恢复；完整 resume history 尚未实现 |
 
 ## Session → Turn → Step 调用链
 
@@ -166,6 +166,22 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 | 6 | 原始字节数按 4 bytes/token 估算 | 向上取整返回 `original_token_count` |
 | 7 | 每个 call 最多 10000 个输出 Delta | 同一 exec call 共享计数，每块最多 8192 字节 |
 
+## Thread → Session → Workspace
+
+![Codex Thread、Session 与 Workspace 路由流程图](./images/thread-session-workspace.png)
+
+可编辑源图位于 [`diagrams/thread-session-workspace.svg`](./diagrams/thread-session-workspace.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | `thread/start` 接收可选 cwd | `POST /api/threads` 必须接收 workspace_root |
+| 2 | Thread Manager 创建 thread id 与 Session | Handler 创建 thread metadata，Session 首次使用时懒加载 |
+| 3 | Session config 持有规范化 cwd | 解析绝对路径与 symlink，拒绝不存在或非目录路径 |
+| 4 | Turn 从 Session 捕获环境快照 | Router 的 TurnEnvironment 固定为 thread workspace |
+| 5 | App Server 按 thread id 路由 turn/approval | chat 与 approval 都定位同一个 thread-owned Session |
+| 6 | `thread/resume` 恢复 rollout 与 cwd | 启动时加载 `tmp/threads/*.json`，当前只恢复 workspace 绑定 |
+| 7 | 多 thread 可分别运行 | 每个 thread 独立 chat mutex、history、审批和进程存储 |
+
 ## ExecPolicy 与 Session Prefix Rule
 
 ![Codex ExecPolicy 与 Session Prefix Rule 流程图](./images/exec-policy-prefix-rule.png)
@@ -210,8 +226,10 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - Prefix rule 第一版只支持简单单命令；复合 shell 命令只允许批准一次。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
 - Codex 的 rollout 持久化、hooks、compaction、token 状态和启动预热尚未实现。
+- Thread 元数据已持久化，但 `thread/resume` 尚未恢复 Conversation History 与历史 Turn 页面。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步
 
-继续实现 unified exec 远程执行器抽象，并保留本地 ProcessManager 相同的输出与失败语义。
+继续实现 rollout/Conversation History 持久化，使 `thread/resume` 同时恢复工作区和历史；随后再进入
+unified exec 远程执行器抽象。

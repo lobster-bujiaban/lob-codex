@@ -52,6 +52,95 @@ func TestChatStreamsModelResponse(t *testing.T) {
 	}
 }
 
+func TestThreadWorkspacePersistsAndRoutesExec(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Chdir(dataRoot)
+	workspace := filepath.Join(dataRoot, "sample-workspace")
+	if err := os.Mkdir(workspace, 0o755); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "workspace-marker.txt"), []byte("marker"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	canonicalWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
+
+	handler := appserver.NewHandler(model.NewFakeClient())
+	server := httptest.NewServer(handler)
+	createResponse, err := http.Post(
+		server.URL+"/api/threads",
+		"application/json",
+		strings.NewReader(`{"workspace_root":"`+workspace+`"}`),
+	)
+	if err != nil {
+		t.Fatalf("create thread Post() error = %v", err)
+	}
+	var thread struct {
+		ID            string `json:"id"`
+		WorkspaceRoot string `json:"workspace_root"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&thread); err != nil {
+		t.Fatalf("decode thread: %v", err)
+	}
+	createResponse.Body.Close()
+	if createResponse.StatusCode != http.StatusCreated || thread.WorkspaceRoot != canonicalWorkspace {
+		t.Fatalf("created thread = (%d, %+v)", createResponse.StatusCode, thread)
+	}
+
+	chatResponse, err := http.Post(
+		server.URL+"/api/chat",
+		"application/json",
+		strings.NewReader(`{"thread_id":"`+thread.ID+`","prompt":"请列出文件"}`),
+	)
+	if err != nil {
+		t.Fatalf("chat Post() error = %v", err)
+	}
+	var answer strings.Builder
+	decoder := json.NewDecoder(chatResponse.Body)
+	for {
+		var event struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if err := decoder.Decode(&event); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("decode chat event: %v", err)
+		}
+		answer.WriteString(event.Delta)
+	}
+	chatResponse.Body.Close()
+	server.Close()
+	if err := handler.Close(context.Background()); err != nil {
+		t.Fatalf("handler Close() error = %v", err)
+	}
+	if !strings.Contains(answer.String(), "workspace-marker.txt") {
+		t.Fatalf("answer = %q, want workspace marker", answer.String())
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "tmp", "threads", thread.ID+".json")); err != nil {
+		t.Fatalf("persisted thread metadata: %v", err)
+	}
+
+	resumedHandler := appserver.NewHandler(model.NewFakeClient())
+	defer resumedHandler.Close(context.Background())
+	resumedServer := httptest.NewServer(resumedHandler)
+	defer resumedServer.Close()
+	resumeResponse, err := http.Post(
+		resumedServer.URL+"/api/chat",
+		"application/json",
+		strings.NewReader(`{"thread_id":"`+thread.ID+`","prompt":"hello"}`),
+	)
+	if err != nil {
+		t.Fatalf("resume chat Post() error = %v", err)
+	}
+	resumeResponse.Body.Close()
+	if resumeResponse.StatusCode != http.StatusOK {
+		t.Fatalf("resume chat status = %d", resumeResponse.StatusCode)
+	}
+}
+
 func TestChatStreamsToolLifecycleAndFollowUp(t *testing.T) {
 	handler := appserver.NewHandler(model.NewFakeClient())
 	defer handler.Close(context.Background())

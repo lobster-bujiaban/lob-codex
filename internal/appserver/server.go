@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -20,11 +22,21 @@ import (
 //go:embed web/*
 var webFiles embed.FS
 
-// Handler owns one long-lived Codex session and exposes it through HTTP.
+// Handler routes App Server requests to independent thread-owned Sessions.
 type Handler struct {
 	mux       *http.ServeMux
-	sessionIO *session.IO
-	chatMu    sync.Mutex
+	client    model.Client
+	store     threadStore
+	defaultID string
+	threadsMu sync.Mutex
+	threads   map[string]*threadRuntime
+}
+
+type threadRuntime struct {
+	metadata threadMetadata
+	mu       sync.Mutex
+	chatMu   sync.Mutex
+	io       *session.IO
 }
 
 type chatStreamEvent struct {
@@ -44,14 +56,38 @@ type chatStreamEvent struct {
 	Chunk          []byte   `json:"chunk,omitempty"`
 	ProcessID      string   `json:"process_id,omitempty"`
 	Stdin          string   `json:"stdin,omitempty"`
+	ThreadID       string   `json:"thread_id,omitempty"`
 }
 
-// NewHandler creates the GUI and chat API using one long-lived model session.
+// NewHandler creates the GUI and thread-aware chat API.
 func NewHandler(client model.Client) *Handler {
-	_, sessionIO := session.New(client)
-	handler := &Handler{mux: http.NewServeMux(), sessionIO: sessionIO}
+	dataRoot, err := os.Getwd()
+	if err != nil {
+		dataRoot = "."
+	}
+	dataRoot, err = filepath.Abs(dataRoot)
+	if err != nil {
+		panic(err)
+	}
+	const defaultThreadID = "current-workspace"
+	handler := &Handler{
+		mux: http.NewServeMux(), client: client, store: newThreadStore(dataRoot),
+		defaultID: defaultThreadID, threads: make(map[string]*threadRuntime),
+	}
+	handler.threads[defaultThreadID] = &threadRuntime{metadata: threadMetadata{
+		ID: defaultThreadID, WorkspaceRoot: dataRoot, WorkingDirectory: dataRoot,
+	}}
+	storedThreads, err := handler.store.list()
+	if err != nil {
+		panic(err)
+	}
+	for _, metadata := range storedThreads {
+		handler.threads[metadata.ID] = &threadRuntime{metadata: metadata}
+	}
 	handler.mux.HandleFunc("POST /api/chat", handler.chat)
 	handler.mux.HandleFunc("POST /api/approvals/{callID}", handler.respondApproval)
+	handler.mux.HandleFunc("GET /api/threads", handler.listThreads)
+	handler.mux.HandleFunc("POST /api/threads", handler.startThread)
 
 	staticFiles, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -64,6 +100,7 @@ func NewHandler(client model.Client) *Handler {
 func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
 		TurnID   string                 `json:"turn_id"`
+		ThreadID string                 `json:"thread_id"`
 		Decision tools.ApprovalDecision `json:"decision"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16<<10)).Decode(&input); err != nil {
@@ -80,7 +117,17 @@ func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Requ
 	response := session.ExecApprovalResponse{
 		CallID: request.PathValue("callID"), TurnID: input.TurnID, Decision: input.Decision,
 	}
-	if err := h.sessionIO.RespondExecApproval(request.Context(), response); err != nil {
+	runtime, err := h.thread(input.ThreadID)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	if err := sessionIO.RespondExecApproval(request.Context(), response); err != nil {
 		http.Error(writer, err.Error(), http.StatusConflict)
 		return
 	}
@@ -94,15 +141,29 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 
 // Close shuts down the owned session.
 func (h *Handler) Close(ctx context.Context) error {
-	return h.sessionIO.Shutdown(ctx)
+	h.threadsMu.Lock()
+	runtimes := make([]*threadRuntime, 0, len(h.threads))
+	for _, runtime := range h.threads {
+		runtimes = append(runtimes, runtime)
+	}
+	h.threadsMu.Unlock()
+	for _, runtime := range runtimes {
+		runtime.mu.Lock()
+		sessionIO := runtime.io
+		runtime.mu.Unlock()
+		if sessionIO != nil {
+			if err := sessionIO.Shutdown(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
-	h.chatMu.Lock()
-	defer h.chatMu.Unlock()
-
 	var input struct {
-		Prompt string `json:"prompt"`
+		Prompt   string `json:"prompt"`
+		ThreadID string `json:"thread_id"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 1<<20))
 	if err := decoder.Decode(&input); err != nil {
@@ -114,12 +175,24 @@ func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
+	runtime, err := h.thread(input.ThreadID)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	runtime.chatMu.Lock()
+	defer runtime.chatMu.Unlock()
 
 	writer.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 
-	wrote, err := streamTurn(request, writer, h.sessionIO, input.Prompt)
+	wrote, err := streamTurn(request, writer, sessionIO, input.Prompt)
 	if err != nil {
 		if !wrote {
 			http.Error(writer, err.Error(), http.StatusBadGateway)
@@ -127,6 +200,73 @@ func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 		}
 		_ = writeChatStreamEvent(writer, chatStreamEvent{Type: "error", Message: err.Error()})
 	}
+}
+
+func (h *Handler) listThreads(writer http.ResponseWriter, _ *http.Request) {
+	stored, err := h.store.list()
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.threadsMu.Lock()
+	for _, metadata := range stored {
+		if _, exists := h.threads[metadata.ID]; !exists {
+			h.threads[metadata.ID] = &threadRuntime{metadata: metadata}
+		}
+	}
+	current := h.threads[h.defaultID].metadata
+	h.threadsMu.Unlock()
+	threads := append([]threadMetadata{current}, stored...)
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(map[string]any{"threads": threads})
+}
+
+func (h *Handler) startThread(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		WorkspaceRoot string `json:"workspace_root"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16<<10)).Decode(&input); err != nil {
+		http.Error(writer, "invalid JSON request", http.StatusBadRequest)
+		return
+	}
+	metadata, err := h.store.create(strings.TrimSpace(input.WorkspaceRoot))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.threadsMu.Lock()
+	h.threads[metadata.ID] = &threadRuntime{metadata: metadata}
+	h.threadsMu.Unlock()
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(writer).Encode(metadata)
+}
+
+func (h *Handler) thread(threadID string) (*threadRuntime, error) {
+	if threadID == "" {
+		threadID = h.defaultID
+	}
+	h.threadsMu.Lock()
+	runtime := h.threads[threadID]
+	h.threadsMu.Unlock()
+	if runtime == nil {
+		return nil, fmt.Errorf("unknown thread_id %q", threadID)
+	}
+	return runtime, nil
+}
+
+func (h *Handler) sessionIO(runtime *threadRuntime) (*session.IO, error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.io != nil {
+		return runtime.io, nil
+	}
+	_, sessionIO, err := session.NewInWorkspace(h.client, runtime.metadata.WorkspaceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("start thread %s: %w", runtime.metadata.ID, err)
+	}
+	runtime.io = sessionIO
+	return sessionIO, nil
 }
 
 func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *session.IO, prompt string) (bool, error) {

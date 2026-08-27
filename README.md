@@ -93,6 +93,10 @@ Seatbelt，并支持普通管道/PTY 长进程、`session_id`、`write_stdin`、
 `terminal_interaction`，每次命令结果携带独立 `chunk_id`。大输出采用 head-tail 缓冲保留首尾，
 并返回 `original_token_count` 与 `output_omitted_bytes`。
 
+Web App 支持按工作区新建对话。每个 `thread_id` 拥有独立 Session 和 TurnEnvironment，工作区
+元数据保存到 `tmp/threads/`；服务重启后可恢复 thread 与 workspace 的绑定。Conversation
+History 的落盘与恢复尚未实现，因此当前重启只恢复工作区，不恢复历史消息。
+
 ## 交流与联系
 
 对实现细节有疑问、发现问题或想交流 Agent Harness，可以扫码私信：

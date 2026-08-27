@@ -58,19 +58,39 @@ type pendingApproval struct {
 
 // New creates a session and starts the long-running submission loop.
 func New(client model.Client) (*Session, *IO) {
-	ctx, cancel := context.WithCancel(context.Background())
-	submissions := make(chan Submission)
-	events := make(chan protocol.Event, 128)
-	done := make(chan struct{})
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		workingDirectory = "."
 	}
-	workingDirectory, err = filepath.Abs(workingDirectory)
+	sess, io, err := NewInWorkspace(client, workingDirectory)
 	if err != nil {
-		workingDirectory = "."
+		panic(err)
 	}
-	environment := tools.Environment{WorkingDirectory: workingDirectory, WorkspaceRoot: workingDirectory}
+	return sess, io
+}
+
+// NewInWorkspace creates a Session whose tool environment is rooted at one directory.
+func NewInWorkspace(client model.Client, workspaceRoot string) (*Session, *IO, error) {
+	workspaceRoot, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve workspace root: %w", err)
+	}
+	workspaceRoot, err = filepath.EvalSymlinks(workspaceRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("canonicalize workspace root: %w", err)
+	}
+	info, err := os.Stat(workspaceRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open workspace root: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, nil, errors.New("workspace root must be a directory")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	submissions := make(chan Submission)
+	events := make(chan protocol.Event, 128)
+	done := make(chan struct{})
+	environment := tools.Environment{WorkingDirectory: workspaceRoot, WorkspaceRoot: workspaceRoot}
 	sess := &Session{
 		client: client, events: events, ctx: ctx, cancel: cancel,
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
@@ -78,7 +98,7 @@ func New(client model.Client) (*Session, *IO) {
 	sess.tools.SetApprovalReviewer(sess.requestCommandApproval)
 	io := &IO{txSub: submissions, rxEvent: events, done: done}
 	go sess.submissionLoop(submissions, done)
-	return sess, io
+	return sess, io, nil
 }
 
 // Submit wraps an operation in a uniquely identified Submission.
