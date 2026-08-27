@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -20,7 +21,7 @@ const usage = `LOB Codex - a coding agent harness built step by step in Go
 
 Usage:
   lob-codex <prompt>
-  lob-codex serve [-addr 127.0.0.1:8787]
+  lob-codex serve [-addr 127.0.0.1:0]
 
 Example:
   lob-codex "explain this repository"
@@ -71,7 +72,7 @@ func main() {
 
 func serve(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
-	address := flags.String("addr", "127.0.0.1:8787", "HTTP listen address")
+	address := flags.String("addr", "127.0.0.1:0", "HTTP listen address; port 0 selects a free port")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -81,11 +82,16 @@ func serve(args []string) error {
 		return fmt.Errorf("configure model: %w (set LOB_CODEX_API_KEY and LOB_CODEX_MODEL)", err)
 	}
 
+	listener, err := net.Listen("tcp", *address)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", *address, err)
+	}
+	defer listener.Close()
+
 	server := &http.Server{
-		Addr:              *address,
 		Handler:           appserver.NewHandler(client),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	fmt.Printf("LOB Codex GUI: http://%s\n", *address)
-	return server.ListenAndServe()
+	fmt.Printf("LOB Codex GUI: http://%s\n", listener.Addr())
+	return server.Serve(listener)
 }
