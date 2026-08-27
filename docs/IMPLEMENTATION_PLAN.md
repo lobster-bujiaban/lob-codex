@@ -18,7 +18,8 @@ Tool Router → Approval → Sandbox → Tool Executor
 MCP / Skills / Plugins / Subagents
 ```
 
-第一版使用 Go 实现纵向最小闭环。高级模块必须通过 interface 接入，不能把模型、工具、存储和 UI 写进一个循环。
+第一版使用 Go 沿 Codex 的真实调用链实现纵向最小闭环。模块边界、状态流转和事件语义以
+Codex 源码为准；Go interface 只承担 Rust trait 的语言等价表达，不用于重新设计主流程。
 
 ## 2. Codex 源码阅读地图
 
@@ -36,7 +37,8 @@ MCP / Skills / Plugins / Subagents
 | App Server | `codex-rs/app-server` | `internal/appserver` |
 | CLI/TUI | `codex-rs/cli`、`codex-rs/tui` | `cmd/lob-codex` |
 
-阅读时只回答三个问题：输入是什么、状态在哪里、输出事件是什么。不要逐文件照抄。
+阅读时必须回答：入口是什么、输入是什么、状态在哪里、调用顺序是什么、输出事件是什么、
+错误和取消如何传播。实现可以使用 Go 语法重写，但这些核心语义不得改变。
 
 ## 3. 分阶段实现
 
@@ -180,12 +182,12 @@ lob-codex/
 
 每个阶段固定按以下顺序推进：
 
-1. 从 Codex 只读一个相关入口和一条完整调用链。
-2. 写下本阶段最小协议，不复制内部复杂类型。
-3. 用 FakeModel/FakeTool 跑通确定性闭环。
-4. 接入一个真实实现。
-5. 增加失败路径和结构化事件。
-6. 更新示例与 README，记录与 Codex 的差异。
+1. 定位 Codex 对应入口、协议类型和完整调用链。
+2. 在 `docs/CODEX_PARITY.md` 写下 Rust → Go 的模块与类型映射。
+3. 等价实现状态机、事件顺序、错误传播和取消语义。
+4. 用 FakeModel/FakeTool 验证确定性流程，再接入真实实现。
+5. 对照 Codex 补齐失败路径、结构化事件和生命周期边界。
+6. 更新一致性清单；未对齐项不得标记完成。
 
 ## 6. 第一轮迭代清单
 
