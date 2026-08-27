@@ -3,8 +3,6 @@ package model
 import (
 	"context"
 	"strings"
-
-	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 // FakeClient is a deterministic model implementation for local learning and tests.
@@ -17,7 +15,7 @@ func NewFakeClient() *FakeClient {
 
 // Stream emits a small response while preserving the same lifecycle as a real model.
 func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
-	events := make(chan protocol.Event)
+	events := make(chan ResponseEvent)
 	errors := make(chan error, 1)
 
 	go func() {
@@ -27,24 +25,21 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 		response := "Fake model: " + strings.TrimSpace(request.Input)
 		chunks := strings.Fields(response)
 
-		if !sendEvent(ctx, events, protocol.Event{Type: protocol.EventResponseStarted}) {
-			return
-		}
 		for index, chunk := range chunks {
 			if index < len(chunks)-1 {
 				chunk += " "
 			}
-			if !sendEvent(ctx, events, protocol.Event{Type: protocol.EventTextDelta, Text: chunk}) {
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputTextDelta, Delta: chunk}) {
 				return
 			}
 		}
-		sendEvent(ctx, events, protocol.Event{Type: protocol.EventResponseCompleted})
+		sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
 	}()
 
 	return Stream{Events: events, Errors: errors}
 }
 
-func sendEvent(ctx context.Context, events chan<- protocol.Event, event protocol.Event) bool {
+func sendResponseEvent(ctx context.Context, events chan<- ResponseEvent, event ResponseEvent) bool {
 	select {
 	case <-ctx.Done():
 		return false

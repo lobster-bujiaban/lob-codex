@@ -1,24 +1,34 @@
 // Package model defines model-provider boundaries used by the agent runtime.
 package model
 
-import (
-	"context"
+import "context"
 
-	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
-)
-
-// Request contains the provider-independent input for one model response.
+// Request contains the provider-independent input for one sampling request.
 type Request struct {
 	Input string
 }
 
-// Stream carries model events and the terminal asynchronous error, if any.
+// ResponseEventType identifies an internal model stream event.
+type ResponseEventType string
+
+const (
+	ResponseOutputTextDelta ResponseEventType = "response.output_text.delta"
+	ResponseCompleted       ResponseEventType = "response.completed"
+)
+
+// ResponseEvent is mapped to public protocol events by a turn.
+type ResponseEvent struct {
+	Type  ResponseEventType
+	Delta string
+}
+
+// Stream carries model response events and the terminal asynchronous error, if any.
 type Stream struct {
-	Events <-chan protocol.Event
+	Events <-chan ResponseEvent
 	Errors <-chan error
 }
 
-// Client streams provider-independent model events.
+// Client creates a model stream for one sampling request.
 type Client interface {
 	Stream(context.Context, Request) Stream
 }

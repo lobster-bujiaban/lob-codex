@@ -2,20 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/lobster-bujiaban/lob-codex/internal/agent"
 	"github.com/lobster-bujiaban/lob-codex/internal/appserver"
 	"github.com/lobster-bujiaban/lob-codex/internal/config"
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
-	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
+	"github.com/lobster-bujiaban/lob-codex/internal/session"
 )
 
 const usage = `LOB Codex - a coding agent harness built step by step in Go
@@ -28,22 +27,6 @@ Usage:
 Example:
   lob-codex "explain this repository"
 `
-
-type terminalSink struct {
-	writer io.Writer
-}
-
-func (s terminalSink) Emit(event protocol.Event) error {
-	if event.Type == protocol.EventTextDelta {
-		_, err := fmt.Fprint(s.writer, event.Text)
-		return err
-	}
-	if event.Type == protocol.EventResponseCompleted {
-		_, err := fmt.Fprintln(s.writer)
-		return err
-	}
-	return nil
-}
 
 func main() {
 	if len(os.Args) == 1 {
@@ -68,15 +51,45 @@ func main() {
 	flag.Parse()
 
 	prompt := strings.TrimSpace(strings.Join(flag.Args(), " "))
-	if err := agent.ValidateInput(prompt); err != nil {
+	if err := session.ValidateInput(prompt); err != nil {
 		flag.Usage()
 		os.Exit(2)
 	}
 
-	runner := agent.NewRunner(model.NewFakeClient(), terminalSink{writer: os.Stdout})
-	if err := runner.Run(context.Background(), prompt); err != nil {
+	if err := runPrompt(context.Background(), prompt); err != nil {
 		fmt.Fprintf(os.Stderr, "lob-codex: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func runPrompt(ctx context.Context, prompt string) error {
+	_, sessionIO := session.New(model.NewFakeClient())
+	defer sessionIO.Shutdown(context.Background())
+
+	turnID, err := sessionIO.SubmitTurnInput(ctx, prompt)
+	if err != nil {
+		return err
+	}
+	for {
+		event, err := sessionIO.NextEvent(ctx)
+		if err != nil {
+			return err
+		}
+		if event.ID != turnID {
+			continue
+		}
+		switch event.Msg.Type {
+		case "agent_message_content_delta":
+			fmt.Fprint(os.Stdout, event.Msg.AgentMessageContentDelta.Delta)
+		case "turn_complete":
+			fmt.Fprintln(os.Stdout)
+			if event.Msg.TurnComplete.Error != nil {
+				return errors.New(event.Msg.TurnComplete.Error.Message)
+			}
+			return nil
+		case "turn_aborted":
+			return fmt.Errorf("turn aborted: %s", event.Msg.TurnAborted.Reason)
+		}
 	}
 }
 
@@ -101,8 +114,10 @@ func serve(args []string) error {
 	}
 	defer listener.Close()
 
+	handler := appserver.NewHandler(client)
+	defer handler.Close(context.Background())
 	server := &http.Server{
-		Handler:           appserver.NewHandler(client),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	fmt.Printf("LOB Codex GUI: http://%s\n", listener.Addr())

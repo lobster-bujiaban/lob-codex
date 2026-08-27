@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-
-	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 const defaultOpenAIBaseURL = "https://api.openai.com/v1"
@@ -65,7 +63,7 @@ func NewOpenAIClientFromEnv() (*OpenAIClient, error) {
 // Stream starts one Responses API request and converts its SSE stream into
 // provider-independent harness events.
 func (c *OpenAIClient) Stream(ctx context.Context, request Request) Stream {
-	events := make(chan protocol.Event)
+	events := make(chan ResponseEvent)
 	errorsChannel := make(chan error, 1)
 
 	go func() {
@@ -80,7 +78,7 @@ func (c *OpenAIClient) Stream(ctx context.Context, request Request) Stream {
 	return Stream{Events: events, Errors: errorsChannel}
 }
 
-func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<- protocol.Event) error {
+func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<- ResponseEvent) error {
 	body, err := json.Marshal(map[string]any{
 		"model":  c.model,
 		"input":  request.Input,
@@ -117,10 +115,6 @@ func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<
 		return fmt.Errorf("model returned %s: %s", response.Status, strings.TrimSpace(string(message)))
 	}
 
-	if !sendEvent(ctx, events, protocol.Event{Type: protocol.EventResponseStarted}) {
-		return ctx.Err()
-	}
-
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, 64<<10), 2<<20)
 	for scanner.Scan() {
@@ -146,7 +140,7 @@ func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<
 
 		switch event.Type {
 		case "response.output_text.delta":
-			if !sendEvent(ctx, events, protocol.Event{Type: protocol.EventTextDelta, Text: event.Delta}) {
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputTextDelta, Delta: event.Delta}) {
 				return ctx.Err()
 			}
 		case "error":
@@ -159,7 +153,7 @@ func (c *OpenAIClient) stream(ctx context.Context, request Request, events chan<
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read model stream: %w", err)
 	}
-	if !sendEvent(ctx, events, protocol.Event{Type: protocol.EventResponseCompleted}) {
+	if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted}) {
 		return ctx.Err()
 	}
 	return nil

@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
 func TestOpenAIClientStreamsTextDeltas(t *testing.T) {
@@ -30,7 +28,7 @@ func TestOpenAIClientStreamsTextDeltas(t *testing.T) {
 	}
 
 	stream := client.Stream(context.Background(), Request{Input: "hi"})
-	var events []protocol.Event
+	var events []ResponseEvent
 	for event := range stream.Events {
 		events = append(events, event)
 	}
@@ -40,11 +38,10 @@ func TestOpenAIClientStreamsTextDeltas(t *testing.T) {
 		}
 	}
 
-	want := []protocol.Event{
-		{Type: protocol.EventResponseStarted},
-		{Type: protocol.EventTextDelta, Text: "hello "},
-		{Type: protocol.EventTextDelta, Text: "world"},
-		{Type: protocol.EventResponseCompleted},
+	want := []ResponseEvent{
+		{Type: ResponseOutputTextDelta, Delta: "hello "},
+		{Type: ResponseOutputTextDelta, Delta: "world"},
+		{Type: ResponseCompleted},
 	}
 	if len(events) != len(want) {
 		t.Fatalf("events = %#v, want %#v", events, want)

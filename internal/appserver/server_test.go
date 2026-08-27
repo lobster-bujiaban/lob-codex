@@ -1,6 +1,7 @@
 package appserver_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,9 @@ import (
 )
 
 func TestChatStreamsModelResponse(t *testing.T) {
-	server := httptest.NewServer(appserver.NewHandler(model.NewFakeClient()))
+	handler := appserver.NewHandler(model.NewFakeClient())
+	defer handler.Close(context.Background())
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	response, err := http.Post(
