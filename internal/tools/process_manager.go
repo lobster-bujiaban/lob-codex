@@ -8,9 +8,15 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/creack/pty"
 )
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 const (
 	minYieldTime     = 250 * time.Millisecond
@@ -44,6 +50,8 @@ type managedProcess struct {
 	id        int
 	command   *exec.Cmd
 	stdin     io.WriteCloser
+	terminal  *os.File
+	tty       bool
 	output    synchronizedBuffer
 	done      chan struct{}
 	startedAt time.Time
@@ -67,18 +75,35 @@ func NewProcessManager() *ProcessManager {
 
 func (manager *ProcessManager) start(
 	command *exec.Cmd,
+	tty bool,
 	yield time.Duration,
 	outputLimit int,
 ) (string, error) {
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		return "", fmt.Errorf("open command stdin: %w", err)
-	}
-	process := &managedProcess{command: command, stdin: stdin, done: make(chan struct{}), startedAt: time.Now()}
-	command.Stdout = &process.output
-	command.Stderr = &process.output
-	if err := command.Start(); err != nil {
-		return "", fmt.Errorf("start command: %w", err)
+	process := &managedProcess{command: command, done: make(chan struct{}), startedAt: time.Now(), tty: tty}
+	outputDone := make(chan struct{})
+	if tty {
+		terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 120})
+		if err != nil {
+			return "", fmt.Errorf("start PTY command: %w", err)
+		}
+		process.stdin = terminal
+		process.terminal = terminal
+		go func() {
+			_, _ = io.Copy(&process.output, terminal)
+			close(outputDone)
+		}()
+	} else {
+		stdin, err := command.StdinPipe()
+		if err != nil {
+			return "", fmt.Errorf("open command stdin: %w", err)
+		}
+		process.stdin = stdin
+		command.Stdout = &process.output
+		command.Stderr = &process.output
+		if err := command.Start(); err != nil {
+			return "", fmt.Errorf("start command: %w", err)
+		}
+		close(outputDone)
 	}
 	manager.mu.Lock()
 	process.id = manager.nextID
@@ -88,6 +113,10 @@ func (manager *ProcessManager) start(
 	go func() {
 		_ = command.Wait()
 		process.exitCode = command.ProcessState.ExitCode()
+		if process.terminal != nil {
+			_ = process.terminal.Close()
+			<-outputDone
+		}
 		close(process.done)
 	}()
 
@@ -117,7 +146,11 @@ func (manager *ProcessManager) writeStdin(
 
 	if chars != "" {
 		if chars == "\x03" {
-			if err := process.command.Process.Signal(os.Interrupt); err != nil {
+			if process.tty {
+				if _, err := process.stdin.Write([]byte{3}); err != nil {
+					return "", fmt.Errorf("interrupt PTY process %d: %w", sessionID, err)
+				}
+			} else if err := process.command.Process.Signal(os.Interrupt); err != nil {
 				return "", fmt.Errorf("interrupt process %d: %w", sessionID, err)
 			}
 		} else if _, err := io.WriteString(process.stdin, chars); err != nil {
@@ -145,14 +178,19 @@ type execResult struct {
 	WallTimeSeconds float64 `json:"wall_time_seconds"`
 	Output          string  `json:"output"`
 	OutputTruncated bool    `json:"output_truncated,omitempty"`
+	TTY             bool    `json:"tty,omitempty"`
 }
 
 func (process *managedProcess) result(outputLimit int, running bool) execResult {
 	data, nextOffset := process.output.sliceFrom(process.readOffset)
 	process.readOffset = nextOffset
 	text, truncated := truncateOutput(data, outputLimit)
+	if process.tty {
+		text = ansiEscapePattern.ReplaceAllString(strings.ReplaceAll(text, "\r\n", "\n"), "")
+	}
 	result := execResult{
-		WallTimeSeconds: time.Since(process.startedAt).Seconds(), Output: text, OutputTruncated: truncated,
+		WallTimeSeconds: time.Since(process.startedAt).Seconds(), Output: text,
+		OutputTruncated: truncated, TTY: process.tty,
 	}
 	if running {
 		result.SessionID = &process.id
@@ -187,6 +225,9 @@ func (manager *ProcessManager) Close() {
 	manager.mu.Unlock()
 	for _, process := range processes {
 		_ = process.command.Process.Kill()
+		if process.terminal != nil {
+			_ = process.terminal.Close()
+		}
 	}
 }
 

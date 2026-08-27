@@ -19,7 +19,7 @@
 | Session/Turn | `codex-rs/core/src/session` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 Conversation History 的采样与回写主链 |
 | 模型客户端 | `codex-rs/core` 模型客户端 | `internal/model` | 部分对齐 | Responses API 现接收 `ResponseItem[]` 并消费文本 Delta、OutputItemDone、Completed；重试和其他 Item 类型尚未对齐 |
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
-| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、Seatbelt、ProcessManager、session_id、增量输出与 write_stdin；PTY 尚未实现 |
+| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、Seatbelt、ProcessManager、pipe/PTY、session_id、增量输出与 write_stdin |
 | MCP | `codex-rs/core/src/mcp.rs` | `internal/mcp` | 未开始 | 必须对齐连接、工具刷新、审批和调用语义 |
 | App Server | `codex-rs/app-server` | `internal/appserver` | 原型 | 服务现持有长生命周期 Session；线程路由和多会话协议尚未实现 |
 
@@ -116,13 +116,28 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 | 5 | 每次读取并消费新增输出 | readOffset 保证后续只返回上次之后的输出 |
 | 6 | 观察到退出后从 store 清理 | 返回 exit_code 后删除；Session Close 强制杀死剩余进程 |
 
+## UnifiedExec PTY
+
+![Codex UnifiedExec PTY 流程图](./images/unified-exec-pty.png)
+
+可编辑源图位于 [`diagrams/unified-exec-pty.svg`](./diagrams/unified-exec-pty.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | ProcessHandle 统一包装本地 PTY 与其他执行器 | managedProcess 统一包装 pipe 与 creack/pty 主端 |
+| 2 | `tty: true` 创建终端会话并绑定子进程 | 创建 24×120 PTY，sandbox-exec/zsh 成为终端前台进程 |
+| 3 | PTY 输出进入共享输出缓冲 | io.Copy 写入 synchronizedBuffer，沿用增量 readOffset |
+| 4 | write_stdin 写 PTY writer | 普通字符写主端，`` 写终端 Ctrl-C 控制字符 |
+| 5 | PTY 退出后关闭主端并等待输出收尾 | Wait → close PTY → output copy 完成 → close done |
+| 6 | 客户端看到终端属性 | FunctionCallOutput 带 `tty: true`，GUI 显示 TTY 标记 |
+
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
 - `ResponseItem` 当前实现文本 Message、FunctionCall 与 FunctionCallOutput；Reasoning、图片和音频内容尚未补齐。
 - Conversation History 尚未实现 Codex 的标准化、截断策略、token 统计、rollout 持久化与恢复。
 - Tool Router 当前按顺序执行；并行工具尚未实现。
-- exec_command 与 write_stdin 当前使用普通 stdin/stdout 管道，没有 PTY、终端尺寸和完整交互 shell 语义。
+- PTY 当前使用固定 24×120 尺寸，尚未实现 resize、终端尺寸事件和平台远程执行器。
 - 当前没有 chunk_id；输出采用单一增量游标，尚未实现 Codex 的 head-tail buffer 与后台终端事件。
 - 审批当前只有 approved 与 denied，没有 session 级批准、prefix rule 和策略修订。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
@@ -131,5 +146,5 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 
 ## 下一步
 
-继续对齐 PTY unified exec：为需要终端的命令分配伪终端、支持中断与终端生命周期事件；
-之后再加入 session 级批准、prefix rule 与完整 ExecPolicy。
+继续对齐批准缓存与 ExecPolicy：加入 approved_for_session、prefix_rule 和可复用规则；随后补 PTY
+resize、终端生命周期事件和远程执行器抽象。

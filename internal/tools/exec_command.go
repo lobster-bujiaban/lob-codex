@@ -37,6 +37,7 @@ func (ExecCommandExecutor) Definition() Definition {
 				"workdir":           map[string]any{"type": "string", "description": "Working directory relative to the workspace root."},
 				"yield_time_ms":     map[string]any{"type": "number", "description": "Timeout for this learning-stage synchronous command."},
 				"max_output_tokens": map[string]any{"type": "number", "description": "Approximate output token budget."},
+				"tty":               map[string]any{"type": "boolean", "description": "Allocate a pseudo-terminal for interactive programs."},
 			},
 			"required":             []string{"cmd"},
 			"additionalProperties": false,
@@ -52,6 +53,7 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		WorkingDir      string `json:"workdir"`
 		YieldTimeMS     int64  `json:"yield_time_ms"`
 		MaxOutputTokens int    `json:"max_output_tokens"`
+		TTY             bool   `json:"tty"`
 	}
 	if err := json.Unmarshal([]byte(invocation.Call.Arguments), &arguments); err != nil {
 		return "", errors.New("arguments must be valid exec_command JSON")
@@ -90,7 +92,7 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 	if err != nil {
 		return "", err
 	}
-	return executor.Manager.start(command, yield, outputLimit)
+	return executor.Manager.start(command, arguments.TTY, yield, outputLimit)
 }
 
 func approvalReason(command string) string {

@@ -37,9 +37,13 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 					SessionID int `json:"session_id"`
 				}
 				if json.Unmarshal([]byte(last.Output), &processResult) == nil && processResult.SessionID > 0 {
+					chars := `hello\n`
+					if request.Input[len(request.Input)-2].ID == "fc_fake_pty_interrupt" {
+						chars = `\u0003`
+					}
 					item := protocol.ResponseItem{
 						Type: "function_call", ID: "fc_fake_write_stdin", CallID: "call_fake_write_stdin",
-						Name: "write_stdin", Arguments: `{"session_id":` + fmt.Sprint(processResult.SessionID) + `,"chars":"hello\n","yield_time_ms":5000}`,
+						Name: "write_stdin", Arguments: `{"session_id":` + fmt.Sprint(processResult.SessionID) + `,"chars":"` + chars + `","yield_time_ms":5000}`,
 					}
 					if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
 						return
@@ -62,6 +66,28 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 			item := protocol.ResponseItem{
 				Type: "function_call", ID: "fc_fake_long_exec", CallID: "call_fake_long_exec",
 				Name: "exec_command", Arguments: `{"cmd":"read line; echo process-done:$line","yield_time_ms":250}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
+		}
+		if strings.Contains(input, "PTY 演示") {
+			item := protocol.ResponseItem{
+				Type: "function_call", ID: "fc_fake_pty", CallID: "call_fake_pty",
+				Name: "exec_command", Arguments: `{"cmd":"read -r line; printf 'pty-received:%s\\n' \"$line\"","tty":true,"yield_time_ms":250}`,
+			}
+			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
+				return
+			}
+			sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseCompleted})
+			return
+		}
+		if strings.Contains(input, "PTY 中断演示") {
+			item := protocol.ResponseItem{
+				Type: "function_call", ID: "fc_fake_pty_interrupt", CallID: "call_fake_pty_interrupt",
+				Name: "exec_command", Arguments: `{"cmd":"sleep 30","tty":true,"yield_time_ms":250}`,
 			}
 			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
 				return

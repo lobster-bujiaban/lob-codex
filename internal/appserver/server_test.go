@@ -202,3 +202,51 @@ func TestChatContinuesLongRunningExecWithWriteStdin(t *testing.T) {
 		t.Fatalf("answer = %q, want process-done", answer.String())
 	}
 }
+
+func TestChatRunsInteractivePTY(t *testing.T) {
+	handler := appserver.NewHandler(model.NewFakeClient())
+	defer handler.Close(context.Background())
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	response, err := http.Post(
+		server.URL+"/api/chat",
+		"application/json",
+		strings.NewReader(`{"prompt":"请运行 PTY 演示"}`),
+	)
+	if err != nil {
+		t.Fatalf("Post() error = %v", err)
+	}
+	defer response.Body.Close()
+
+	decoder := json.NewDecoder(response.Body)
+	var answer strings.Builder
+	for {
+		var event struct {
+			Type   string `json:"type"`
+			Delta  string `json:"delta"`
+			CallID string `json:"call_id"`
+			TurnID string `json:"turn_id"`
+		}
+		if err := decoder.Decode(&event); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		if event.Type == "exec_approval_request" {
+			approvalResponse, err := http.Post(
+				server.URL+"/api/approvals/"+event.CallID,
+				"application/json",
+				strings.NewReader(`{"turn_id":"`+event.TurnID+`","decision":"approved"}`),
+			)
+			if err != nil {
+				t.Fatalf("approval Post() error = %v", err)
+			}
+			approvalResponse.Body.Close()
+		}
+		answer.WriteString(event.Delta)
+	}
+	if !strings.Contains(answer.String(), "pty-received:hello") {
+		t.Fatalf("answer = %q, want PTY response", answer.String())
+	}
+}
