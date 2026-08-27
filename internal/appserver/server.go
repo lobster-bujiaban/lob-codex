@@ -88,6 +88,7 @@ func NewHandler(client model.Client) *Handler {
 	handler.mux.HandleFunc("POST /api/approvals/{callID}", handler.respondApproval)
 	handler.mux.HandleFunc("GET /api/threads", handler.listThreads)
 	handler.mux.HandleFunc("POST /api/threads", handler.startThread)
+	handler.mux.HandleFunc("POST /api/workspaces/select", handler.selectWorkspace)
 
 	staticFiles, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -240,6 +241,25 @@ func (h *Handler) startThread(writer http.ResponseWriter, request *http.Request)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(writer).Encode(metadata)
+}
+
+func (h *Handler) selectWorkspace(writer http.ResponseWriter, request *http.Request) {
+	workspaceRoot, cancelled, err := chooseWorkspace(request.Context())
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if cancelled {
+		writer.WriteHeader(http.StatusNoContent)
+		return
+	}
+	workspaceRoot, err = validateWorkspace(workspaceRoot)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(map[string]string{"workspace_root": workspaceRoot})
 }
 
 func (h *Handler) thread(threadID string) (*threadRuntime, error) {

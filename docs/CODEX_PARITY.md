@@ -182,6 +182,10 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 | 6 | `thread/resume` 恢复 rollout 与 cwd | 启动时加载 `tmp/threads/*.json`，当前只恢复 workspace 绑定 |
 | 7 | 多 thread 可分别运行 | 每个 thread 独立 chat mutex、history、审批和进程存储 |
 
+浏览器无法通过普通目录上传控件获得本机绝对路径，因此本地 App Server 在 macOS 使用系统
+文件夹选择器取得路径，再复用相同的 workspace 校验与 `thread/start` 主链；其他平台当前保留
+明确的“不支持原生选择器”错误，仍可手动输入绝对路径。
+
 ## ExecPolicy 与 Session Prefix Rule
 
 ![Codex ExecPolicy 与 Session Prefix Rule 流程图](./images/exec-policy-prefix-rule.png)

@@ -99,6 +99,13 @@
     .qr-dialog p { margin: 5px 0 16px; color: var(--muted); font-size: 12px; }
     .qr-dialog img { display: block; width: 100%; max-height: 570px; margin: 0 auto; border-radius: 13px; object-fit: contain; }
     .qr-dialog-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #f0ece5; cursor: pointer; }
+    .workspace-dialog { width: min(600px, calc(100vw - 28px)); }
+    .workspace-dialog form { display: block; padding: 26px; border: 0; border-radius: 0; box-shadow: none; }
+    .workspace-dialog h2 { margin: 0; font-size: 19px; }.workspace-dialog p { margin: 7px 0 18px; color: var(--muted); font-size: 12px; }
+    .workspace-field { display: flex; gap: 8px; }.workspace-field input { min-width: 0; flex: 1; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .workspace-field button, .workspace-actions button { padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); cursor: pointer; }
+    .workspace-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }.workspace-actions .primary { border-color: var(--orange); background: var(--orange); color: #fff; }
+    .workspace-error { min-height: 18px; margin-top: 8px; color: #b42318; font-size: 11px; }
     .repo-link { display: block; margin-top: 12px; color: var(--muted); font-size: 10px; text-align: center; text-decoration: none; }
     .repo-link:hover { color: var(--orange-dark); }
 
@@ -302,6 +309,22 @@
     </div>
   </dialog>
 
+  <dialog id="workspace-dialog" class="qr-dialog workspace-dialog">
+    <form id="workspace-form">
+      <h2>新建工作区对话</h2>
+      <p>选择一个本地文件夹，新的 Thread、Session 和工具调用都会绑定到该工作区。</p>
+      <div class="workspace-field">
+        <input id="workspace-input" type="text" aria-label="工作区绝对路径" placeholder="/Users/name/project" required>
+        <button id="workspace-browse" type="button">选择文件夹</button>
+      </div>
+      <div id="workspace-error" class="workspace-error"></div>
+      <div class="workspace-actions">
+        <button id="workspace-cancel" type="button">取消</button>
+        <button class="primary" type="submit">创建对话</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const form = document.querySelector('#chat-form');
     const prompt = document.querySelector('#prompt');
@@ -311,6 +334,10 @@
     const pageTopic = document.querySelector('#page-topic');
     const workspacePath = document.querySelector('#workspace-path');
     const threadList = document.querySelector('#thread-list');
+    const workspaceDialog = document.querySelector('#workspace-dialog');
+    const workspaceForm = document.querySelector('#workspace-form');
+    const workspaceInput = document.querySelector('#workspace-input');
+    const workspaceError = document.querySelector('#workspace-error');
     let activeThreadID = 'current-workspace';
     let threads = [];
     const topicProfiles = {
@@ -432,21 +459,43 @@
       renderThreads();
     }
 
-    async function createThread() {
+    function createThread() {
       const current = threads.find((thread) => thread.id === activeThreadID);
-      const workspaceRoot = window.prompt('请输入新对话的工作区绝对路径', current?.workspace_root || '');
-      if (!workspaceRoot) return;
+      workspaceInput.value = current?.workspace_root || '';
+      workspaceError.textContent = '';
+      workspaceDialog.showModal();
+      workspaceInput.focus();
+      workspaceInput.select();
+    }
+
+    async function submitThread(workspaceRoot) {
       const response = await fetch('/api/threads', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspace_root: workspaceRoot })
       });
       if (!response.ok) {
-        window.alert((await response.text()) || `HTTP ${response.status}`);
+        workspaceError.textContent = (await response.text()) || `HTTP ${response.status}`;
         return;
       }
       const thread = await response.json();
       threads.unshift(thread);
+      workspaceDialog.close();
       selectThread(thread.id);
+    }
+
+    async function browseWorkspace() {
+      workspaceError.textContent = '正在打开文件夹选择器…';
+      const response = await fetch('/api/workspaces/select', { method: 'POST' });
+      if (response.status === 204) {
+        workspaceError.textContent = '';
+        return;
+      }
+      if (!response.ok) {
+        workspaceError.textContent = (await response.text()) || `HTTP ${response.status}`;
+        return;
+      }
+      workspaceInput.value = (await response.json()).workspace_root;
+      workspaceError.textContent = '';
     }
 
     function removeWelcome() {
@@ -714,6 +763,12 @@
     document.querySelector('#home-brand').addEventListener('click', () => showHome());
     document.querySelector('#home-button').addEventListener('click', () => showHome());
     document.querySelector('#new-thread').addEventListener('click', createThread);
+    document.querySelector('#workspace-browse').addEventListener('click', browseWorkspace);
+    document.querySelector('#workspace-cancel').addEventListener('click', () => workspaceDialog.close());
+    workspaceForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      submitThread(workspaceInput.value.trim());
+    });
     document.querySelectorAll('.concept').forEach((button) => {
       button.addEventListener('click', () => showHome(button.dataset.topic));
     });

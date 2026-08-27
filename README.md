@@ -96,6 +96,7 @@ Seatbelt，并支持普通管道/PTY 长进程、`session_id`、`write_stdin`、
 Web App 支持按工作区新建对话。每个 `thread_id` 拥有独立 Session 和 TurnEnvironment，工作区
 元数据保存到 `tmp/threads/`；服务重启后可恢复 thread 与 workspace 的绑定。Conversation
 History 的落盘与恢复尚未实现，因此当前重启只恢复工作区，不恢复历史消息。
+macOS 下可在新建对话弹窗中直接打开 Finder 选择工作区文件夹，也可以手动输入绝对路径。
 
 ## 交流与联系
 
