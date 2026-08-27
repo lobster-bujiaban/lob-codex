@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -311,5 +313,78 @@ func TestSessionApprovalRuleSkipsSecondPrompt(t *testing.T) {
 	}
 	if !strings.Contains(secondAnswer, "session prefix: go version") {
 		t.Fatalf("second answer = %q, want matched session rule", secondAnswer)
+	}
+}
+
+func TestPersistentApprovalRuleSurvivesSessionRestart(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	runTurn := func(serverURL, decision string) (int, string) {
+		response, err := http.Post(
+			serverURL+"/api/chat",
+			"application/json",
+			strings.NewReader(`{"prompt":"请运行会话规则演示"}`),
+		)
+		if err != nil {
+			t.Fatalf("Post() error = %v", err)
+		}
+		defer response.Body.Close()
+
+		approvalCount := 0
+		var answer strings.Builder
+		decoder := json.NewDecoder(response.Body)
+		for {
+			var event struct {
+				Type   string `json:"type"`
+				Delta  string `json:"delta"`
+				CallID string `json:"call_id"`
+				TurnID string `json:"turn_id"`
+			}
+			if err := decoder.Decode(&event); err == io.EOF {
+				break
+			} else if err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			if event.Type == "exec_approval_request" {
+				approvalCount++
+				approvalResponse, err := http.Post(
+					serverURL+"/api/approvals/"+event.CallID,
+					"application/json",
+					strings.NewReader(`{"turn_id":"`+event.TurnID+`","decision":"`+decision+`"}`),
+				)
+				if err != nil {
+					t.Fatalf("approval Post() error = %v", err)
+				}
+				approvalResponse.Body.Close()
+			}
+			answer.WriteString(event.Delta)
+		}
+		return approvalCount, answer.String()
+	}
+
+	firstHandler := appserver.NewHandler(model.NewFakeClient())
+	firstServer := httptest.NewServer(firstHandler)
+	firstApprovals, _ := runTurn(firstServer.URL, "approved_with_amendment")
+	firstServer.Close()
+	if err := firstHandler.Close(context.Background()); err != nil {
+		t.Fatalf("first handler Close() error = %v", err)
+	}
+	if firstApprovals != 1 {
+		t.Fatalf("first approval count = %d, want 1", firstApprovals)
+	}
+	if _, err := os.Stat(filepath.Join("tmp", "exec-policy.rules")); err != nil {
+		t.Fatalf("persistent rule file: %v", err)
+	}
+
+	secondHandler := appserver.NewHandler(model.NewFakeClient())
+	defer secondHandler.Close(context.Background())
+	secondServer := httptest.NewServer(secondHandler)
+	defer secondServer.Close()
+	secondApprovals, secondAnswer := runTurn(secondServer.URL, "denied")
+	if secondApprovals != 0 {
+		t.Fatalf("second approval count = %d, want 0", secondApprovals)
+	}
+	if !strings.Contains(secondAnswer, "persistent prefix: go version") {
+		t.Fatalf("second answer = %q, want matched persistent rule", secondAnswer)
 	}
 }

@@ -146,6 +146,23 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 | 5 | 后续命令按 token 前缀匹配 | 使用切片逐 token 比较，不使用字符串 HasPrefix |
 | 6 | Session 结束清空缓存 | ExecPolicy 随 Session Router 销毁，不写入磁盘 |
 
+## 持久化 ExecPolicy Amendment
+
+![Codex 持久化 ExecPolicy Amendment 流程图](./images/exec-policy-amendment.png)
+
+可编辑源图位于 [`diagrams/exec-policy-amendment.svg`](./diagrams/exec-policy-amendment.svg)。
+
+| 顺序 | Codex | LOB Codex |
+|---|---|---|
+| 1 | 审批请求携带 proposed execpolicy amendment | 简单命令携带结构化 argv prefix |
+| 2 | 客户端返回 `ApprovedExecpolicyAmendment` | GUI 返回 `approved_with_amendment` |
+| 3 | Core 将 amendment 写入规则层 | ExecPolicy 原子写入 `tmp/exec-policy.rules` |
+| 4 | 新策略评估可命中持久化规则 | 新 Session 启动时加载并按 token 前缀匹配 |
+| 5 | 命中后无需再次审批 | 返回 `persistent prefix` 并进入可写 Seatbelt |
+
+项目运行数据统一以 `<workspace>/tmp/` 为根目录，并由 Git 忽略。当前仅有 ExecPolicy 规则；
+后续 rollout、会话索引等本地数据也沿用该边界，不散落到源码目录。
+
 ## 当前明确差异
 
 - `TurnInputMode::StartOrSteer` 当前只实现空闲启动；运行中 steer 与 input queue 尚未实现。
@@ -154,7 +171,7 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 - Tool Router 当前按顺序执行；并行工具尚未实现。
 - PTY 当前使用固定 24×120 尺寸，尚未实现 resize、终端尺寸事件和平台远程执行器。
 - 当前没有 chunk_id；输出采用单一增量游标，尚未实现 Codex 的 head-tail buffer 与后台终端事件。
-- 审批支持 approved、approved_for_session 与 denied；尚未实现持久化 ApprovedExecpolicyAmendment。
+- 审批支持 approved、approved_for_session、approved_with_amendment 与 denied；持久化规则首版采用项目 `tmp/` JSON 文件，尚未实现 Codex 正式规则语法。
 - Prefix rule 第一版只支持简单单命令；复合 shell 命令只允许批准一次。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
 - Codex 的 rollout 持久化、hooks、compaction、token 状态和启动预热尚未实现。
@@ -162,5 +179,4 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 
 ## 下一步
 
-继续对齐持久化 ExecPolicy amendment 与规则优先级；随后补 PTY resize、终端生命周期事件和
-远程执行器抽象。
+继续补 PTY resize、终端生命周期事件和远程执行器抽象。

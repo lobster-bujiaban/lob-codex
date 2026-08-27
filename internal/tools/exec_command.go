@@ -66,7 +66,7 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 	if err != nil {
 		return "", err
 	}
-	approved := requirement.MatchedRule != "" && strings.HasPrefix(requirement.MatchedRule, "session prefix:")
+	approved := requirement.MatchedRule != "" && !strings.HasPrefix(requirement.MatchedRule, "built-in read-only:")
 	policyRule := requirement.MatchedRule
 	if requirement.NeedsApproval {
 		if invocation.Reviewer == nil {
@@ -82,17 +82,26 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		if err != nil {
 			return "", err
 		}
-		if decision != ApprovalApproved {
-			if decision == ApprovalApprovedForSession && len(requirement.ProposedRule) > 0 {
+		switch decision {
+		case ApprovalApproved:
+			approved = true
+			policyRule = "approved once"
+		case ApprovalApprovedForSession:
+			if len(requirement.ProposedRule) > 0 {
 				executor.Policy.AddSessionRule(requirement.ProposedRule)
 				approved = true
 				policyRule = "session prefix: " + strings.Join(requirement.ProposedRule, " ")
-			} else {
-				return "command execution denied by user", nil
 			}
-		} else {
+		case ApprovalApprovedWithAmendment:
+			if err := executor.Policy.AddPersistentRule(requirement.ProposedRule); err != nil {
+				return "", err
+			}
 			approved = true
-			policyRule = "approved once"
+			policyRule = "persistent prefix: " + strings.Join(requirement.ProposedRule, " ")
+		case ApprovalDenied:
+			return "command execution denied by user", nil
+		default:
+			return "", fmt.Errorf("unsupported approval decision %q", decision)
 		}
 	}
 

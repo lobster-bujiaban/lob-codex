@@ -481,12 +481,16 @@
       const approveSession = document.createElement('button');
       approveSession.type = 'button';
       approveSession.textContent = '本会话批准';
+      const approveAlways = document.createElement('button');
+      approveAlways.type = 'button';
+      approveAlways.textContent = '始终允许';
       const result = document.createElement('div');
       result.className = 'approval-result';
       const respond = async (decision) => {
         approve.disabled = true;
         deny.disabled = true;
         approveSession.disabled = true;
+        approveAlways.disabled = true;
         result.textContent = '正在提交决定…';
         try {
           const response = await fetch(`/api/approvals/${encodeURIComponent(event.call_id)}`, {
@@ -497,16 +501,19 @@
           if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
           if (decision === 'approved') result.textContent = '已批准一次，命令继续执行';
           else if (decision === 'approved_for_session') result.textContent = '已批准本会话规则，后续匹配命令将自动执行';
+          else if (decision === 'approved_with_amendment') result.textContent = '规则已保存到项目 tmp，重启后仍会自动执行';
           else result.textContent = '已拒绝，结果将返回模型';
         } catch (error) {
           approve.disabled = false;
           deny.disabled = false;
           approveSession.disabled = false;
+          approveAlways.disabled = false;
           result.textContent = `提交失败：${error.message}`;
         }
       };
       approve.addEventListener('click', () => respond('approved'));
       approveSession.addEventListener('click', () => respond('approved_for_session'));
+      approveAlways.addEventListener('click', () => respond('approved_with_amendment'));
       deny.addEventListener('click', () => respond('denied'));
       actions.append(approve);
       if (event.proposed_prefix_rule?.length) {
@@ -514,7 +521,7 @@
         prefix.className = 'approval-result';
         prefix.textContent = `建议规则：[${event.proposed_prefix_rule.join(', ')}]`;
         card.append(title, reason, command, prefix, actions, result);
-        actions.append(approveSession, deny);
+        actions.append(approveSession, approveAlways, deny);
       } else {
         actions.append(deny);
         card.append(title, reason, command, actions, result);

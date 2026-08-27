@@ -68,6 +68,7 @@ func (h *Handler) respondApproval(writer http.ResponseWriter, request *http.Requ
 	}
 	if input.Decision != tools.ApprovalApproved &&
 		input.Decision != tools.ApprovalApprovedForSession &&
+		input.Decision != tools.ApprovalApprovedWithAmendment &&
 		input.Decision != tools.ApprovalDenied {
 		http.Error(writer, "invalid approval decision", http.StatusBadRequest)
 		return

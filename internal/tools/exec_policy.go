@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,19 +22,48 @@ type ExecPolicyRequirement struct {
 	MatchedRule   string
 }
 
-// ExecPolicy owns built-in rules and Session-scoped approved prefixes.
+// ExecPolicy owns built-in, persisted amendment, and Session-scoped rules.
 type ExecPolicy struct {
-	mu           sync.RWMutex
-	sessionRules [][]string
+	mu              sync.RWMutex
+	sessionRules    [][]string
+	persistentRules [][]string
+	rulesPath       string
+	loadErr         error
+}
+
+type persistentExecPolicy struct {
+	Rules [][]string `json:"rules"`
 }
 
 // NewExecPolicy creates the policy state owned by one Session router.
-func NewExecPolicy() *ExecPolicy {
-	return &ExecPolicy{}
+func NewExecPolicy(workspaceRoot string) *ExecPolicy {
+	policy := &ExecPolicy{rulesPath: filepath.Join(workspaceRoot, "tmp", "exec-policy.rules")}
+	contents, err := os.ReadFile(policy.rulesPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return policy
+	}
+	if err != nil {
+		policy.loadErr = err
+		return policy
+	}
+	var stored persistentExecPolicy
+	if err := json.Unmarshal(contents, &stored); err != nil {
+		policy.loadErr = err
+		return policy
+	}
+	for _, rule := range stored.Rules {
+		if len(rule) >= 2 {
+			policy.persistentRules = append(policy.persistentRules, append([]string(nil), rule...))
+		}
+	}
+	return policy
 }
 
 // Evaluate parses one command and checks built-in and Session rules.
 func (policy *ExecPolicy) Evaluate(command string, requestedPrefix []string) (ExecPolicyRequirement, error) {
+	if policy.loadErr != nil {
+		return ExecPolicyRequirement{}, fmt.Errorf("load exec policy: %w", policy.loadErr)
+	}
 	tokens, reusable, err := parseSimpleCommand(command)
 	if err != nil {
 		return ExecPolicyRequirement{}, err
@@ -43,6 +74,11 @@ func (policy *ExecPolicy) Evaluate(command string, requestedPrefix []string) (Ex
 	if reusable {
 		policy.mu.RLock()
 		defer policy.mu.RUnlock()
+		for _, rule := range policy.persistentRules {
+			if hasTokenPrefix(tokens, rule) {
+				return ExecPolicyRequirement{MatchedRule: "persistent prefix: " + strings.Join(rule, " ")}, nil
+			}
+		}
 		for _, rule := range policy.sessionRules {
 			if hasTokenPrefix(tokens, rule) {
 				return ExecPolicyRequirement{MatchedRule: "session prefix: " + strings.Join(rule, " ")}, nil
@@ -61,6 +97,38 @@ func (policy *ExecPolicy) Evaluate(command string, requestedPrefix []string) (Ex
 	return ExecPolicyRequirement{
 		NeedsApproval: true, Reason: reason, ProposedRule: proposed,
 	}, nil
+}
+
+// AddPersistentRule stores an approved amendment beneath the workspace tmp directory.
+func (policy *ExecPolicy) AddPersistentRule(rule []string) error {
+	if len(rule) < 2 {
+		return errors.New("persistent exec policy rule requires at least two tokens")
+	}
+	copyOfRule := append([]string(nil), rule...)
+	policy.mu.Lock()
+	defer policy.mu.Unlock()
+	for _, existing := range policy.persistentRules {
+		if slices.Equal(existing, copyOfRule) {
+			return nil
+		}
+	}
+	rules := append(append([][]string(nil), policy.persistentRules...), copyOfRule)
+	contents, err := json.MarshalIndent(persistentExecPolicy{Rules: rules}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode exec policy: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(policy.rulesPath), 0o755); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+	temporaryPath := policy.rulesPath + ".tmp"
+	if err := os.WriteFile(temporaryPath, append(contents, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write exec policy: %w", err)
+	}
+	if err := os.Rename(temporaryPath, policy.rulesPath); err != nil {
+		return fmt.Errorf("replace exec policy: %w", err)
+	}
+	policy.persistentRules = rules
+	return nil
 }
 
 // AddSessionRule caches one exact argv prefix until the Session closes.
@@ -164,8 +232,4 @@ func validRequestedPrefix(tokens, prefix []string) bool {
 
 func hasTokenPrefix(tokens, prefix []string) bool {
 	return len(prefix) <= len(tokens) && slices.Equal(tokens[:len(prefix)], prefix)
-}
-
-func formatPrefixRule(rule []string) string {
-	return fmt.Sprintf("[%s]", strings.Join(rule, ", "))
 }

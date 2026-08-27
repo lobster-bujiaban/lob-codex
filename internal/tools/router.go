@@ -35,9 +35,10 @@ type Environment struct {
 type ApprovalDecision string
 
 const (
-	ApprovalApproved           ApprovalDecision = "approved"
-	ApprovalApprovedForSession ApprovalDecision = "approved_for_session"
-	ApprovalDenied             ApprovalDecision = "denied"
+	ApprovalApproved              ApprovalDecision = "approved"
+	ApprovalApprovedForSession    ApprovalDecision = "approved_for_session"
+	ApprovalApprovedWithAmendment ApprovalDecision = "approved_with_amendment"
+	ApprovalDenied                ApprovalDecision = "denied"
 )
 
 // ApprovalRequest describes one command waiting for user review.
@@ -87,7 +88,7 @@ func (router *Router) SetApprovalReviewer(reviewer ApprovalReviewer) {
 func NewRouter(environment Environment) *Router {
 	return &Router{
 		registry: make(map[string]Executor), env: environment,
-		processes: NewProcessManager(), policy: NewExecPolicy(),
+		processes: NewProcessManager(), policy: NewExecPolicy(environment.WorkspaceRoot),
 	}
 }
 

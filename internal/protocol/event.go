@@ -115,7 +115,7 @@ func NewExecApprovalRequest(
 ) EventMsg {
 	availableDecisions := []string{"approved", "denied"}
 	if len(proposedPrefix) > 0 {
-		availableDecisions = []string{"approved", "approved_for_session", "denied"}
+		availableDecisions = []string{"approved", "approved_for_session", "approved_with_amendment", "denied"}
 	}
 	return EventMsg{
 		Type: "exec_approval_request",
