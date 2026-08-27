@@ -72,13 +72,23 @@
     .concept.active .concept-index { border-color: var(--orange); background: var(--orange); color: #fff; }
 
     .sidebar-bottom { margin-top: auto; }
-    .wechat-card {
-      display: grid; grid-template-columns: 72px 1fr; gap: 11px; align-items: center;
-      padding: 11px; border: 1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,.72);
+    .social-title { margin: 0 0 8px 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+    .social-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .social-card {
+      display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; padding: 9px 6px;
+      border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.72); cursor: pointer;
     }
-    .wechat-card img { width: 72px; height: 72px; border-radius: 8px; }
-    .wechat-card strong { display: block; font-size: 12px; }
-    .wechat-card p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .social-card:hover { border-color: #efb99f; background: #fff; }
+    .social-card img { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; }
+    .social-card.douyin img { object-position: 50% 39%; }
+    .social-card strong { overflow: hidden; max-width: 100%; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .qr-dialog { width: min(420px, calc(100vw - 28px)); padding: 0; border: 0; border-radius: 20px; background: #fff; color: var(--ink); box-shadow: 0 24px 80px rgba(23,45,79,.25); }
+    .qr-dialog::backdrop { background: rgba(23,45,79,.42); backdrop-filter: blur(3px); }
+    .qr-dialog-inner { position: relative; padding: 24px; text-align: center; }
+    .qr-dialog h2 { margin: 0; font-size: 18px; }
+    .qr-dialog p { margin: 5px 0 16px; color: var(--muted); font-size: 12px; }
+    .qr-dialog img { display: block; width: 100%; max-height: 570px; margin: 0 auto; border-radius: 13px; object-fit: contain; }
+    .qr-dialog-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #f0ece5; cursor: pointer; }
     .repo-link { display: block; margin-top: 12px; color: var(--muted); font-size: 10px; text-align: center; text-decoration: none; }
     .repo-link:hover { color: var(--orange-dark); }
 
@@ -191,9 +201,16 @@
       </nav>
 
       <div class="sidebar-bottom">
-        <div class="wechat-card">
-          <img src="/wechat-qr.png" alt="虾哥不加班公众号二维码">
-          <div><strong>关注「虾哥不加班」</strong><p>持续更新 Agent Harness 源码拆解与实战。</p></div>
+        <p class="social-title">关注「虾哥不加班」</p>
+        <div class="social-grid">
+          <button class="social-card" type="button" data-qr="wechat">
+            <img src="/wechat-official-qr.jpg" alt="微信公众号二维码缩略图">
+            <strong>微信公众号</strong>
+          </button>
+          <button class="social-card douyin" type="button" data-qr="douyin">
+            <img src="/douyin-qr.jpg" alt="抖音二维码缩略图">
+            <strong>抖音</strong>
+          </button>
         </div>
         <a class="repo-link" href="https://github.com/lobster-bujiaban/lob-codex" target="_blank" rel="noreferrer">github.com/lobster-bujiaban/lob-codex</a>
       </div>
@@ -233,6 +250,15 @@
       </div>
     </section>
   </div>
+
+  <dialog id="qr-dialog" class="qr-dialog">
+    <div class="qr-dialog-inner">
+      <button id="qr-dialog-close" class="qr-dialog-close" type="button" aria-label="关闭">×</button>
+      <h2 id="qr-dialog-title"></h2>
+      <p id="qr-dialog-description"></p>
+      <img id="qr-dialog-image" src="" alt="">
+    </div>
+  </dialog>
 
   <script>
     const form = document.querySelector('#chat-form');
@@ -323,6 +349,30 @@
 
     document.querySelectorAll('.prompt-chip').forEach((button) => {
       button.addEventListener('click', () => submitPrompt(button.dataset.prompt));
+    });
+
+    const qrDialog = document.querySelector('#qr-dialog');
+    const qrTitle = document.querySelector('#qr-dialog-title');
+    const qrDescription = document.querySelector('#qr-dialog-description');
+    const qrImage = document.querySelector('#qr-dialog-image');
+    const qrProfiles = {
+      wechat: { title: '微信公众号 · 虾哥不加班', description: '微信扫码关注，持续更新 Agent Harness 源码拆解。', image: '/wechat-official-qr.jpg' },
+      douyin: { title: '抖音 · 虾哥不加班', description: '抖音扫码关注，抖音号：lob.ai', image: '/douyin-qr.jpg' }
+    };
+
+    document.querySelectorAll('[data-qr]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const profile = qrProfiles[button.dataset.qr];
+        qrTitle.textContent = profile.title;
+        qrDescription.textContent = profile.description;
+        qrImage.src = profile.image;
+        qrImage.alt = `${profile.title}二维码`;
+        qrDialog.showModal();
+      });
+    });
+    document.querySelector('#qr-dialog-close').addEventListener('click', () => qrDialog.close());
+    qrDialog.addEventListener('click', (event) => {
+      if (event.target === qrDialog) qrDialog.close();
     });
   </script>
 </body>
