@@ -256,6 +256,7 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - Responses API reasoning item 回放保留必填 `summary` 字段；上游未返回摘要条目时序列化为空数组，避免后续 Step 因缺少 `input[*].summary` 被拒绝。
 - MCP 支持 stdio JSON-RPC 与 Streamable HTTP（POST JSON/SSE + GET 会话流）、启动超时、连接有界重试、`tools/list_changed` 刷新、elicitation schema 表单，以及 RFC 9728/7591 文件型 OAuth；尚未实现 Codex RMCP keyring、executor 路由 OAuth 与完整 OpenAI form elicitation。
 - App Server v2 兼容层提供 `/api/v2/threads`、`thread read(includeTurns)`、turn start/steer/interrupt 与 `/events?after=<ordinal>`；实时 NDJSON 使用 Codex v2 notification method 命名。原生 JSON-RPC initialize/initialized 握手、WebSocket/stdio transport、通知 opt-out 和分页 thread list 尚未实现。
+- 删除工作区只移除 LOB Codex 自有 thread metadata 与 rollout，不删除目标工作区的 `tmp/` 或其他项目文件；共享工作区可能被其他 Harness 使用，目录所有权不能由绑定关系推断。
 - 断线恢复只重放 rollout 中的 durable SessionMeta/TurnContext/EventMsg/ResponseItem/Compacted；文本与终端 Delta 按 Codex 的 ephemeral 边界不伪造重放，客户端从 canonical item/turn 状态恢复后继续接收新通知。
 - `apply_patch` 已按 Codex 语法解析 Add/Delete/Update/Move，并用 seek_sequence 四级匹配（exact / rstrip / trim / Unicode 标点）写回工作区，摘要为 `Success. Updated the following files:`。路径不得逃出 workspace，且保护 `.git` 与 `.codex`。Responses 面用 function `input`，尚未实现 Codex freeform custom tool、streaming `PatchApplyUpdated` 与 PreserveLineEndings。
 

@@ -678,7 +678,7 @@ func TestPersistentApprovalRuleSurvivesSessionRestart(t *testing.T) {
 	}
 }
 
-func TestRemoveWorkspaceDeletesTmpAndHidesDefault(t *testing.T) {
+func TestRemoveWorkspacePreservesProjectFilesAndHidesDefault(t *testing.T) {
 	dataRoot := t.TempDir()
 	t.Chdir(dataRoot)
 	extra := filepath.Join(dataRoot, "extra-project")
@@ -771,8 +771,8 @@ func TestRemoveWorkspaceDeletesTmpAndHidesDefault(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(extra, "keep-me.txt")); err != nil {
 		t.Fatalf("project files were deleted: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(extra, "tmp")); !os.IsNotExist(err) {
-		t.Fatalf("workspace tmp still on disk: %v", err)
+	if contents, err := os.ReadFile(filepath.Join(extra, "tmp", "exec-policy.rules")); err != nil || string(contents) != "{}\n" {
+		t.Fatalf("workspace tmp was changed: contents = %q, err = %v", contents, err)
 	}
 	if _, err := os.Stat(filepath.Join(dataRoot, "tmp", "threads", extraID+".json")); !os.IsNotExist(err) {
 		t.Fatalf("thread metadata still present: %v", err)

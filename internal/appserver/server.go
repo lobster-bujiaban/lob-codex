@@ -616,7 +616,6 @@ func (h *Handler) removeWorkspace(writer http.ResponseWriter, request *http.Requ
 	}
 	h.threadsMu.Lock()
 	var removed []*threadRuntime
-	defaultRoot := h.threads[h.defaultID].metadata.WorkspaceRoot
 	resetDefault := false
 	for threadID, runtime := range h.threads {
 		if !sameWorkspace(runtime.metadata.WorkspaceRoot, workspaceRoot) {
@@ -656,12 +655,6 @@ func (h *Handler) removeWorkspace(writer http.ResponseWriter, request *http.Requ
 	for _, runtime := range removed {
 		h.store.remove(runtime.metadata.ID)
 	}
-	if canDeleteWorkspaceTmp(workspaceRoot, defaultRoot) {
-		if err := os.RemoveAll(filepath.Join(filepath.Clean(workspaceRoot), "tmp")); err != nil {
-			http.Error(writer, fmt.Sprintf("delete workspace tmp: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
 	writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -679,17 +672,6 @@ func shutdownThread(ctx context.Context, runtime *threadRuntime) error {
 
 func sameWorkspace(left, right string) bool {
 	return filepath.Clean(left) == filepath.Clean(right)
-}
-
-func canDeleteWorkspaceTmp(workspaceRoot, processRoot string) bool {
-	cleanRoot := filepath.Clean(workspaceRoot)
-	if cleanRoot == string(filepath.Separator) {
-		return false
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" && cleanRoot == filepath.Clean(home) {
-		return false
-	}
-	return !sameWorkspace(cleanRoot, processRoot)
 }
 
 func (h *Handler) thread(threadID string) (*threadRuntime, error) {

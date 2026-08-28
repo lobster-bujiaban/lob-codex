@@ -142,7 +142,7 @@
     .extensions-button { padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink-soft); font-size: 11px; cursor: pointer; }
     .extensions-dialog { width: min(720px, calc(100vw - 28px)); }
     .extensions-shell { position: relative; padding: 25px; }.extensions-shell h2 { margin: 0; font-size: 19px; }.extensions-shell > p { margin: 6px 0 16px; color: var(--muted); font-size: 11px; }
-    .extensions-actions { display:flex;gap:8px;margin-bottom:15px }.extensions-actions button { padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer }.extensions-actions .primary{background:var(--ink);color:#fff}
+    .extensions-actions { display:flex;gap:8px;margin-bottom:8px }.extensions-actions button { padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer }.extensions-actions .primary{background:var(--ink);color:#fff}.extensions-actions button:disabled{opacity:.6;cursor:wait}.extensions-status{min-height:16px;margin:0 0 15px;color:var(--muted);font-size:10px;word-break:break-all}.extensions-status.success{color:var(--green)}.extensions-status.error{color:var(--red)}
     .extensions-section { margin-top: 15px; }.extensions-section h3 { margin:0 0 7px;font-size:13px }.extension-list{display:grid;gap:7px}.extension-item{padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#faf9f6}.extension-head{display:flex;justify-content:space-between;gap:10px}.extension-name{font-size:12px;font-weight:700}.extension-state{font-size:10px;color:var(--muted)}.extension-state.ready{color:var(--green)}.extension-state.failed{color:var(--red)}.extension-meta{margin-top:4px;color:var(--muted);font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.extension-error{margin-top:6px;color:var(--red);font-size:10px}.extension-tools{margin-top:6px;color:#5b4ba8;font-size:10px}
 
     .conversation { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
@@ -422,6 +422,7 @@
       <h2>Skills、插件与 MCP</h2>
       <p>显示当前 Thread 实际加载的扩展及失败原因。</p>
       <div class="extensions-actions"><button id="extensions-refresh" class="primary" type="button">重新扫描并连接</button></div>
+      <div id="extensions-status" class="extensions-status" aria-live="polite"></div>
       <div id="extensions-content">正在读取扩展状态…</div>
     </div>
   </dialog>
@@ -456,6 +457,7 @@
     const workspaceDialog = document.querySelector('#workspace-dialog');
     const extensionsDialog = document.querySelector('#extensions-dialog');
     const extensionsContent = document.querySelector('#extensions-content');
+    const extensionsStatus = document.querySelector('#extensions-status');
     const workspaceForm = document.querySelector('#workspace-form');
     const workspaceInput = document.querySelector('#workspace-input');
     const workspaceError = document.querySelector('#workspace-error');
@@ -1028,6 +1030,9 @@
 
     async function showExtensions() {
       extensionsDialog.showModal();
+      const current = threads.find((thread) => thread.id === activeThreadID);
+      extensionsStatus.className = 'extensions-status';
+      extensionsStatus.textContent = current?.workspace_root ? `当前扫描工作区：${current.workspace_root}` : '';
       try { await loadExtensions(); } catch (error) { extensionsContent.textContent = `读取失败：${error.message}`; }
     }
 
@@ -1773,16 +1778,30 @@
     document.querySelector('#extensions-button').addEventListener('click', showExtensions);
     document.querySelector('#extensions-close').addEventListener('click', () => extensionsDialog.close());
     document.querySelector('#extensions-refresh').addEventListener('click', async () => {
+      const refreshButton = document.querySelector('#extensions-refresh');
+      const current = threads.find((thread) => thread.id === activeThreadID);
       if (activeRequest) {
-        extensionsContent.textContent = '当前任务仍在运行，暂时不能重载扩展。请关闭此窗口，点击输入框右侧的停止按钮；任务结束后再打开扩展并刷新。';
+        extensionsStatus.className = 'extensions-status error';
+        extensionsStatus.textContent = '当前任务仍在运行。请关闭窗口并停止任务，任务结束后再刷新。';
         return;
       }
-      extensionsContent.textContent = '正在重新扫描并连接…';
+      refreshButton.disabled = true;
+      refreshButton.textContent = '正在扫描并连接…';
+      extensionsStatus.className = 'extensions-status';
+      extensionsStatus.textContent = `正在扫描：${current?.workspace_root || '当前工作区'}`;
       try {
         const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/extensions/refresh`, { method: 'POST' });
         if (!response.ok) throw new Error(await response.text());
         await loadExtensions();
-      } catch (error) { extensionsContent.textContent = `刷新失败：${error.message}`; }
+        extensionsStatus.className = 'extensions-status success';
+        extensionsStatus.textContent = `刷新完成：${current?.workspace_root || '当前工作区'}`;
+      } catch (error) {
+        extensionsStatus.className = 'extensions-status error';
+        extensionsStatus.textContent = `刷新失败：${error.message}`;
+      } finally {
+        refreshButton.disabled = false;
+        refreshButton.textContent = '重新扫描并连接';
+      }
     });
     document.querySelector('#new-thread').addEventListener('click', createThread);
     document.querySelector('#new-conversation').addEventListener('click', newConversation);
