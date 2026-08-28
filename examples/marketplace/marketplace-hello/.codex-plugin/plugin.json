@@ -1,0 +1,6 @@
+{
+  "name": "marketplace-hello",
+  "version": "0.1.0",
+  "description": "用于验证 Marketplace 安装与卸载的本地示例插件",
+  "skills": "./skills"
+}

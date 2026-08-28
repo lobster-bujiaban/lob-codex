@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "example-mcp": {
+      "command": "go",
+      "args": ["run", "./examples/mcp-server"],
+      "startup_timeout_ms": 10000
+    }
+  }
+}

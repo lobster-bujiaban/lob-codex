@@ -1,0 +1,2 @@
+name = "example-researcher"
+description = "只读检索并归纳代码调用链的示例 Agent"

@@ -251,6 +251,7 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - Fork 已支持历史前缀与 workspace 继承，尚未持久化 Codex 的 `forked_from_id` 和 ordinal lineage 元数据。
 - 运行时流程视图从 canonical ResponseItem 与 TurnComplete EventMsg 重建 Turn、Step、工具调用、精确 token usage 和汇总指标；审批与终端增量事件的完整回放仍待补齐。
 - 插件发现工作区 `plugins/*/.codex-plugin/plugin.json` 与 `.agents/plugins/*`，加载 skills、MCP、hooks、apps、commands、agents；本地 `marketplace.json` 可安装到 `.agents/plugins/` 并卸载；尚未实现 Codex 远程 marketplace、Git/npm source 与 keyring 凭据。
+- `plugins/example-extension` 提供覆盖上述贡献类型的工作区示例，`examples/mcp-server` 提供最小 stdio MCP 握手、工具发现与调用链，`.agents/plugins/marketplace.json` 用于验证本地安装/卸载流程；这些是演示夹具，不改变 Codex 扩展生命周期。
 - Skill 首版解析 `SKILL.md` 的 name/description，并在用户显式 `$skill-name` 提及时以独立 developer item 注入；尚未实现 Codex 的模型辅助隐式选择与可用 Skill 列表提示。
 - MCP 支持 stdio JSON-RPC 与 Streamable HTTP（POST JSON/SSE + GET 会话流）、启动超时、连接有界重试、`tools/list_changed` 刷新、elicitation schema 表单，以及 RFC 9728/7591 文件型 OAuth；尚未实现 Codex RMCP keyring、executor 路由 OAuth 与完整 OpenAI form elicitation。
 - App Server v2 兼容层提供 `/api/v2/threads`、`thread read(includeTurns)`、turn start/steer/interrupt 与 `/events?after=<ordinal>`；实时 NDJSON 使用 Codex v2 notification method 命名。原生 JSON-RPC initialize/initialized 握手、WebSocket/stdio transport、通知 opt-out 和分页 thread list 尚未实现。

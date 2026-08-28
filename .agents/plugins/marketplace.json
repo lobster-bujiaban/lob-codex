@@ -1,0 +1,16 @@
+{
+  "name": "lob-codex-examples",
+  "interface": {
+    "displayName": "LOB Codex 示例市场"
+  },
+  "plugins": [
+    {
+      "name": "marketplace-hello",
+      "category": "Examples",
+      "source": {
+        "source": "local",
+        "path": "../../examples/marketplace/marketplace-hello"
+      }
+    }
+  ]
+}
