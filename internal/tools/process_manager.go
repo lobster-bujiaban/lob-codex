@@ -60,7 +60,8 @@ type managedProcess struct {
 	command    *exec.Cmd
 	remote     *remoteProcess
 	stdin      io.WriteCloser
-	terminal   *os.File
+	terminal   io.Closer
+	wait       func() int
 	tty        bool
 	policyRule string
 	callID     string
@@ -166,8 +167,14 @@ func (manager *ProcessManager) start(
 	manager.processes[process.id] = process
 	manager.mu.Unlock()
 	go func() {
-		_ = command.Wait()
-		process.exitCode = command.ProcessState.ExitCode()
+		if process.wait != nil {
+			process.exitCode = process.wait()
+		} else {
+			_ = command.Wait()
+			if command.ProcessState != nil {
+				process.exitCode = command.ProcessState.ExitCode()
+			}
+		}
 		if process.terminal != nil {
 			_ = process.terminal.Close()
 			<-outputDone
@@ -190,6 +197,7 @@ type RemoteExecRequest struct {
 	CallID           string
 	PolicyRule       string
 	Policy           SandboxPolicy
+	TTY              bool
 	Yield            time.Duration
 	OutputLimit      int
 	Emit             EventEmitter
@@ -217,6 +225,7 @@ func (manager *ProcessManager) startRemote(ctx context.Context, baseURL string, 
 		Command:   request.Command,
 		Argv:      NativeShellArgv(request.Command),
 		CWD:       request.WorkingDirectory,
+		TTY:       request.TTY,
 		Sandbox: &execserver.SandboxIntent{
 			WorkspaceWrite:        request.Policy.WorkspaceWrite,
 			NetworkAccess:         request.Policy.NetworkAccess,
@@ -237,6 +246,7 @@ func (manager *ProcessManager) startRemote(ctx context.Context, baseURL string, 
 		policyRule: request.PolicyRule + " · remote-exec-server",
 		callID:     request.CallID,
 		emit:       request.Emit,
+		tty:        request.TTY,
 	}
 	manager.mu.Lock()
 	process.id = manager.nextID

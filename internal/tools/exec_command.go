@@ -123,12 +123,9 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		WorkspaceWrite: approved, NetworkAccess: arguments.NetworkAccess && approved,
 	}
 	if invocation.Environment.ExecServer != "" {
-		if arguments.TTY {
-			return "", errors.New("PTY unified exec is unavailable on remote exec-server; ConPTY is not implemented")
-		}
 		return executor.Manager.startRemote(ctx, invocation.Environment.ExecServer, RemoteExecRequest{
 			Command: arguments.Command, WorkingDirectory: workingDirectory,
-			WorkspaceRoot: invocation.Environment.WorkspaceRoot, Policy: policy,
+			WorkspaceRoot: invocation.Environment.WorkspaceRoot, Policy: policy, TTY: arguments.TTY,
 			CallID: invocation.Call.CallID, Yield: yield, OutputLimit: outputLimit,
 			PolicyRule: policyRule, Emit: invocation.Emit,
 		})

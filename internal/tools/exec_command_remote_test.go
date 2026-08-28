@@ -60,6 +60,29 @@ func TestExecCommandRemoteSendsUnwrappedArgv(t *testing.T) {
 	}
 }
 
+func TestExecCommandRemoteForwardsTTY(t *testing.T) {
+	var got execserver.ExecParams
+	handler := execserver.NewHandler(func(_ context.Context, params execserver.ExecParams) (*exec.Cmd, error) {
+		got = params
+		return exec.Command("pwd"), nil
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	dir := t.TempDir()
+	executor := ExecCommandExecutor{Manager: NewProcessManager(), Policy: NewExecPolicy(dir)}
+	_, err := executor.Execute(context.Background(), Invocation{
+		Call:        Call{CallID: "c-tty", Name: "exec_command", Arguments: `{"cmd":"pwd","tty":true}`},
+		Environment: Environment{WorkingDirectory: dir, WorkspaceRoot: dir, ExecServer: server.URL},
+	})
+	if err == nil {
+		t.Fatal("Execute() succeeded without exec-server StartPTY, want error")
+	}
+	if !got.TTY {
+		t.Fatalf("remote exec params tty = false, want true")
+	}
+}
+
 func TestNativeShellArgvIsUnwrapped(t *testing.T) {
 	argv := NativeShellArgv("ls")
 	joined := strings.Join(argv, " ")

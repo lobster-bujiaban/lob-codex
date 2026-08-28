@@ -19,7 +19,7 @@
 | Session/Turn | `codex-rs/core/src/session`、`codex-rs/history`、`codex-rs/core/src/session/rollout_reconstruction.rs` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 SessionMeta、TurnContext、EventMsg、ResponseItem JSONL rollout 与恢复主链 |
 | 模型客户端 | `codex-rs/core` 模型客户端、`codex-rs/codex-api/src/sse/responses.rs` | `internal/model` | 部分对齐 | Responses API 接收 `ResponseItem[]`，消费文本 Delta、OutputItemDone、Completed usage/response_id；支持建连/429/5xx 有界重试、Reasoning Item 与并行工具调用 |
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
-| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs`、`codex-rs/windows-sandbox-rs`、`codex-rs/exec-server` | `internal/tools`、`internal/execserver` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、Windows RestrictedToken（legacy）、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin、后台终端清理；远程 exec-server 发送明文 argv + portable sandbox intent，由对端本机套沙箱 |
+| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs`、`codex-rs/windows-sandbox-rs`、`codex-rs/exec-server` | `internal/tools`、`internal/execserver` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、Windows RestrictedToken（legacy）+ ConPTY、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin、后台终端清理；远程 exec-server 发送明文 argv + portable sandbox intent，由对端本机套沙箱 |
 | MCP/Skills/插件 | `codex-rs/core/src/session/mcp.rs`、`codex-rs/core-skills`、`codex-rs/core-plugins` | `internal/mcp`、`internal/extensions` | 部分对齐 | 已实现 stdio/HTTP MCP、启动超时与有界重试、stdio/SSE 上的 tools/list_changed 与 elicitation schema 表单、文件型 OAuth token 与 GUI 登录、扩展状态面板、插件启停/本地 marketplace 安装卸载，以及 plugin 贡献的 hooks/apps/commands/agents；Codex keyring OAuth、远程 marketplace 与完整 hooks 引擎尚未对齐 |
 | App Server | `codex-rs/app-server`、`app-server-protocol/v2` | `internal/appserver` | 部分对齐 | 已实现 GUI API 与 v2 兼容 REST 面：thread start/list/read、turn start/steer/interrupt、独立 Session、canonical Turn 状态和 rollout ordinal 事件恢复 |
 
@@ -131,10 +131,10 @@ GUI 启动环境可能没有交互式 Shell 的 PATH。执行器会保留进程 
 
 | 顺序 | Codex | LOB Codex |
 |---|---|---|
-| 1 | ProcessHandle 统一包装本地 PTY 与其他执行器 | managedProcess 统一包装 pipe 与 creack/pty 主端 |
-| 2 | `tty: true` 创建终端会话并绑定子进程 | 创建 24×120 PTY，sandbox-exec/zsh 成为终端前台进程 |
+| 1 | ProcessHandle 统一包装本地 PTY 与其他执行器 | managedProcess 统一包装 pipe、Unix PTY 与 Windows ConPTY |
+| 2 | `tty: true` 创建终端会话并绑定子进程 | Unix 创建 24×120 PTY；Windows 走 ConPTY（`CreatePseudoConsole` + `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`）+ RestrictedToken，子进程进入 Job Object |
 | 3 | PTY 输出进入共享输出缓冲 | io.Copy 写入 synchronizedBuffer，沿用增量 readOffset |
-| 4 | write_stdin 写 PTY writer | 普通字符写主端，`` 写终端 Ctrl-C 控制字符 |
+| 4 | write_stdin 写 PTY writer | 普通字符写主端，`` 写终端 Ctrl-C；Windows ConPTY 按 Codex 将 LF/CRLF 归一成 Enter、Backspace 编成 DEL |
 | 5 | PTY 退出后关闭主端并等待输出收尾 | Wait → close PTY → output copy 完成 → close done |
 | 6 | 客户端看到终端属性 | FunctionCallOutput 带 `tty: true`，GUI 显示 TTY 标记 |
 
@@ -238,7 +238,7 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - `ResponseItem` 当前实现文本与 base64 `input_image` Message、Reasoning、FunctionCall 和 FunctionCallOutput；远程/本地图片预处理及音频内容尚未补齐。
 - Conversation History 已实现调用/输出配对标准化、上下文估算、90% 阈值自动压缩及 replacement history 恢复；Codex 的完整媒体标准化和精确 token usage 尚未实现。
 - 同一模型响应中的多个工具调用并发执行，结果按模型原始调用顺序写回 History；尚未实现 Codex 的工具并发资格分类与单工具串行约束。
-- PTY 当前使用固定 24×120 尺寸；Codex unified exec 同样未暴露 resize 工具参数。Windows 上 `tty: true` 明确失败（ConPTY / 私有桌面未实现）。
+- PTY 当前使用固定 24×120 尺寸（Unix `creack/pty` 与 Windows ConPTY 一致）；Codex unified exec 同样未暴露 resize 工具参数。Windows ConPTY 已按 Codex `spawn_conpty_process_as_user` 接入 RestrictedToken 路径，并对 stdin 做与 Codex 相同的 LF/CRLF/Backspace 归一化。尚未实现 Elevated runner、私有桌面与 Codex ConPTY 默认 80×24。
 - 已实现 chunk_id、输出 Delta、TerminalInteraction、1 MiB head-tail buffer、Delta 数量/大小上限和省略字节统计。
 - 审批支持 approved、approved_for_session、approved_with_amendment 与 denied；持久化规则首版采用项目 `tmp/` JSON 文件，尚未实现 Codex 正式规则语法。
 - Prefix rule 第一版只缓存简单单命令；复合 shell 中所有子命令均为内置只读命令时自动允许，否则只允许批准一次。
@@ -256,6 +256,21 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - 断线恢复只重放 rollout 中的 durable SessionMeta/TurnContext/EventMsg/ResponseItem/Compacted；文本与终端 Delta 按 Codex 的 ephemeral 边界不伪造重放，客户端从 canonical item/turn 状态恢复后继续接收新通知。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
+## 产品口径与优先级
+
+LOB Codex 的目标是：**日常编码核心不弱于原生 Codex，macOS 与 Windows 都能流畅使用**。不追求 Codex 的完整协议面、实验 API 和外围产品能力。
+
+对照这条口径重新排队后：
+
+| 优先级 | 缺口 | 为什么算核心 / 为什么可以不做 |
+|---|---|---|
+| P0 | Windows `tty: true`（ConPTY） | **已完成**：RestrictedToken 路径下 ConPTY + Job Object + TTY 输入归一化。Elevated / 私有桌面仍不做 |
+| P0 | `apply_patch` | 原生改文件走专用补丁工具；当前只能靠 shell 写文件，编码质量更差 |
+| P1 | Windows 原生工作区选择器 | Mac 有 Finder；Windows 只能手输路径，流畅度不够 |
+| P1 | Windows 可执行搜索路径 | 当前 PATH 只补 Homebrew / Codex.app，Windows 侧 `rg`/`git` 更易找不到 |
+| 不做（现阶段） | App Server 原生 JSON-RPC / VS Code 握手 / 分页 Thread Store | 服务的是官方 IDE 协议，不是本机 GUI 日常路径 |
+| 不做（现阶段） | Elevated command-runner、exec-server WebSocket/Noise、远程 marketplace、keyring OAuth、完整 hooks、TUI、子 Agent | Codex 完整度，不是「两边都能流畅写代码」的必要条件 |
+
 ## 下一步
 
-继续补齐 App Server 原生 JSON-RPC transport、通知订阅能力和分页 Thread Store；随后实现 Windows Elevated command-runner 与完整 exec-server WebSocket/能力发现。
+先实现 `apply_patch`。随后补 Windows 文件夹选择器和可执行 PATH。原生 JSON-RPC、Elevated runner 与完整远程 exec-server 暂缓。

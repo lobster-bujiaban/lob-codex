@@ -39,6 +39,7 @@ func (windowsRestrictedTokenBackend) Command(ctx context.Context, policy Sandbox
 		Token:      syscall.Token(token),
 	}
 	pendingRestrictedTokens.Store(cmd, windows.Handle(token))
+	pendingCommandContexts.Store(cmd, ctx)
 	return cmd, nil
 }
 

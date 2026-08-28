@@ -14,14 +14,19 @@ import (
 
 var (
 	pendingRestrictedTokens sync.Map
+	pendingCommandContexts  sync.Map
 	sandboxJobs             sync.Map
 )
 
 func finishSandboxStart(cmd *exec.Cmd) error {
+	pendingCommandContexts.Delete(cmd)
 	if value, ok := pendingRestrictedTokens.LoadAndDelete(cmd); ok {
 		_ = windows.CloseHandle(value.(windows.Handle))
 	}
 	if cmd.Process == nil {
+		return nil
+	}
+	if _, exists := sandboxJobs.Load(cmd.Process.Pid); exists {
 		return nil
 	}
 	return bindSandboxJob(cmd.Process)

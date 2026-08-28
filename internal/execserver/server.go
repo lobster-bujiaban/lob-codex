@@ -17,16 +17,21 @@ type Spawner func(context.Context, ExecParams) (*exec.Cmd, error)
 type serverProcess struct {
 	command  *exec.Cmd
 	stdin    io.WriteCloser
+	closer   io.Closer
+	wait     func() int
 	output   []byte
 	mu       sync.Mutex
 	done     chan struct{}
 	exitCode int
 }
 
+type PTYStarter func(*exec.Cmd) (stdin io.WriteCloser, stdout io.ReadCloser, closer io.Closer, wait func() int, err error)
+
 // Handler serves the minimal exec-server JSON-RPC surface.
 type Handler struct {
 	spawner    Spawner
 	AfterStart func(*exec.Cmd) error
+	StartPTY   PTYStarter
 	mu         sync.Mutex
 	processes  map[string]*serverProcess
 }
@@ -89,12 +94,46 @@ func (handler *Handler) start(ctx context.Context, params ExecParams) error {
 	if params.ProcessID == "" {
 		return fmt.Errorf("process_id is required")
 	}
-	if params.TTY {
-		return fmt.Errorf("PTY unified exec is unavailable on this exec-server; ConPTY is not implemented")
-	}
 	command, err := handler.spawner(ctx, params)
 	if err != nil {
 		return err
+	}
+	if params.TTY {
+		if handler.StartPTY == nil {
+			return fmt.Errorf("PTY unified exec is unavailable on this exec-server; ConPTY is not implemented")
+		}
+		stdin, stdout, closer, wait, err := handler.StartPTY(command)
+		if err != nil {
+			return err
+		}
+		process := &serverProcess{command: command, stdin: stdin, closer: closer, wait: wait, done: make(chan struct{})}
+		if handler.AfterStart != nil {
+			if err := handler.AfterStart(command); err != nil {
+				_ = closer.Close()
+				if command.Process != nil {
+					_ = command.Process.Kill()
+				}
+				return err
+			}
+		}
+		if err := handler.register(params.ProcessID, process); err != nil {
+			_ = closer.Close()
+			if command.Process != nil {
+				_ = command.Process.Kill()
+			}
+			return err
+		}
+		go func() {
+			_, _ = io.Copy(serverOutput{process: process}, stdout)
+		}()
+		go func() {
+			if process.wait != nil {
+				process.exitCode = process.wait()
+			}
+			_ = closer.Close()
+			close(process.done)
+		}()
+		return nil
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
@@ -112,14 +151,10 @@ func (handler *Handler) start(ctx context.Context, params ExecParams) error {
 			return err
 		}
 	}
-	handler.mu.Lock()
-	if _, exists := handler.processes[params.ProcessID]; exists {
-		handler.mu.Unlock()
+	if err := handler.register(params.ProcessID, process); err != nil {
 		_ = command.Process.Kill()
-		return fmt.Errorf("process_id %q is already running", params.ProcessID)
+		return err
 	}
-	handler.processes[params.ProcessID] = process
-	handler.mu.Unlock()
 	go func() {
 		_ = command.Wait()
 		if command.ProcessState != nil {
@@ -127,6 +162,16 @@ func (handler *Handler) start(ctx context.Context, params ExecParams) error {
 		}
 		close(process.done)
 	}()
+	return nil
+}
+
+func (handler *Handler) register(processID string, process *serverProcess) error {
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	if _, exists := handler.processes[processID]; exists {
+		return fmt.Errorf("process_id %q is already running", processID)
+	}
+	handler.processes[processID] = process
 	return nil
 }
 
@@ -177,8 +222,11 @@ func (handler *Handler) kill(processID string) error {
 	if err != nil {
 		return err
 	}
-	if process.command.Process != nil {
+	if process.command != nil && process.command.Process != nil {
 		_ = process.command.Process.Kill()
+	}
+	if process.closer != nil {
+		_ = process.closer.Close()
 	}
 	return nil
 }

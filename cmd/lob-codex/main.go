@@ -148,6 +148,7 @@ func serveExecServer(args []string) error {
 	defer listener.Close()
 	handler := execserver.NewHandler(tools.CommandFromExecParams)
 	handler.AfterStart = tools.FinishSandboxStart
+	handler.StartPTY = tools.AttachPTYForExecServer
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	fmt.Printf("LOB Codex exec-server: http://%s\n", listener.Addr())
 	return server.Serve(listener)

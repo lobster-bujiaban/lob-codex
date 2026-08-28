@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
@@ -104,7 +105,7 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 		if strings.Contains(input, "PTY 演示") {
 			item := protocol.ResponseItem{
 				Type: "function_call", ID: "fc_fake_pty", CallID: "call_fake_pty",
-				Name: "exec_command", Arguments: `{"cmd":"read -r line; printf 'pty-received:%s\\n' \"$line\"","tty":true,"yield_time_ms":250}`,
+				Name: "exec_command", Arguments: `{"cmd":` + jsonString(ptyEchoCommand()) + `,"tty":true,"yield_time_ms":250}`,
 			}
 			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
 				return
@@ -115,7 +116,7 @@ func (c *FakeClient) Stream(ctx context.Context, request Request) Stream {
 		if strings.Contains(input, "PTY 中断演示") {
 			item := protocol.ResponseItem{
 				Type: "function_call", ID: "fc_fake_pty_interrupt", CallID: "call_fake_pty_interrupt",
-				Name: "exec_command", Arguments: `{"cmd":"sleep 30","tty":true,"yield_time_ms":250}`,
+				Name: "exec_command", Arguments: `{"cmd":` + jsonString(ptySleepCommand()) + `,"tty":true,"yield_time_ms":250}`,
 			}
 			if !sendResponseEvent(ctx, events, ResponseEvent{Type: ResponseOutputItemDone, Item: &item}) {
 				return
@@ -204,4 +205,23 @@ func sendResponseEvent(ctx context.Context, events chan<- ResponseEvent, event R
 	case events <- event:
 		return true
 	}
+}
+
+func ptyEchoCommand() string {
+	if runtime.GOOS == "windows" {
+		return `powershell -NoProfile -Command "$line = [Console]::In.ReadLine(); Write-Output ('pty-received:' + $line)"`
+	}
+	return `read -r line; printf 'pty-received:%s\n' "$line"`
+}
+
+func ptySleepCommand() string {
+	if runtime.GOOS == "windows" {
+		return `powershell -NoProfile -Command "Start-Sleep -Seconds 30"`
+	}
+	return `sleep 30`
+}
+
+func jsonString(value string) string {
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
 }
