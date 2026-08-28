@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lobster-bujiaban/lob-codex/internal/extensions"
+	"github.com/lobster-bujiaban/lob-codex/internal/mcp"
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/session"
 	"github.com/lobster-bujiaban/lob-codex/internal/tools"
@@ -24,12 +26,19 @@ var webFiles embed.FS
 
 // Handler routes App Server requests to independent thread-owned Sessions.
 type Handler struct {
-	mux       *http.ServeMux
-	client    model.Client
-	store     threadStore
-	defaultID string
-	threadsMu sync.Mutex
-	threads   map[string]*threadRuntime
+	mux         *http.ServeMux
+	client      model.Client
+	store       threadStore
+	defaultID   string
+	threadsMu   sync.Mutex
+	threads     map[string]*threadRuntime
+	oauthMu     sync.Mutex
+	oauthLogins map[string]pendingOAuth
+}
+
+type pendingOAuth struct {
+	login    mcp.Login
+	threadID string
 }
 
 type threadRuntime struct {
@@ -37,6 +46,7 @@ type threadRuntime struct {
 	mu       sync.Mutex
 	chatMu   sync.Mutex
 	io       *session.IO
+	session  *session.Session
 }
 
 type chatStreamEvent struct {
@@ -59,6 +69,10 @@ type chatStreamEvent struct {
 	ThreadID       string   `json:"thread_id,omitempty"`
 	BeforeTokens   int      `json:"before_tokens,omitempty"`
 	AfterTokens    int      `json:"after_tokens,omitempty"`
+	ElicitationID  string   `json:"elicitation_id,omitempty"`
+	Server         string   `json:"server,omitempty"`
+	Fields         []any    `json:"fields,omitempty"`
+	Schema         any      `json:"schema,omitempty"`
 }
 
 // NewHandler creates the GUI and thread-aware chat API.
@@ -75,6 +89,7 @@ func NewHandler(client model.Client) *Handler {
 	handler := &Handler{
 		mux: http.NewServeMux(), client: client, store: newThreadStore(dataRoot),
 		defaultID: defaultThreadID, threads: make(map[string]*threadRuntime),
+		oauthLogins: make(map[string]pendingOAuth),
 	}
 	handler.threads[defaultThreadID] = &threadRuntime{metadata: threadMetadata{
 		ID: defaultThreadID, WorkspaceRoot: dataRoot, WorkingDirectory: dataRoot,
@@ -90,15 +105,31 @@ func NewHandler(client model.Client) *Handler {
 	handler.mux.HandleFunc("POST /api/approvals/{callID}", handler.respondApproval)
 	handler.mux.HandleFunc("GET /api/threads", handler.listThreads)
 	handler.mux.HandleFunc("POST /api/threads", handler.startThread)
+	handler.mux.HandleFunc("DELETE /api/threads/{threadID}", handler.removeThread)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/fork", handler.forkThread)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/interrupt", handler.interruptTurn)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/steer", handler.steerTurn)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/extensions/refresh", handler.refreshExtensions)
+	handler.mux.HandleFunc("GET /api/threads/{threadID}/extensions", handler.extensionInventory)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/plugins/{pluginName}/enabled", handler.setPluginEnabled)
+	handler.mux.HandleFunc("GET /api/threads/{threadID}/marketplace", handler.listMarketplace)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/plugins/install", handler.installPlugin)
+	handler.mux.HandleFunc("DELETE /api/threads/{threadID}/plugins/{pluginName}", handler.uninstallPlugin)
+	handler.mux.HandleFunc("POST /api/threads/{threadID}/mcp/{serverName}/oauth/login", handler.startMCPOAuth)
+	handler.mux.HandleFunc("GET /oauth/mcp/callback", handler.completeMCPOAuth)
+	handler.mux.HandleFunc("POST /api/elicitations/{elicitationID}", handler.respondElicitation)
 	handler.mux.HandleFunc("POST /api/threads/{threadID}/background-terminals/clean", handler.cleanBackgroundTerminals)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/history", handler.threadHistory)
 	handler.mux.HandleFunc("GET /api/threads/{threadID}/flow", handler.threadFlow)
 	handler.mux.HandleFunc("POST /api/workspaces/select", handler.selectWorkspace)
 	handler.mux.HandleFunc("DELETE /api/workspaces", handler.removeWorkspace)
+	handler.mux.HandleFunc("GET /api/v2/threads", handler.v2ListThreads)
+	handler.mux.HandleFunc("POST /api/v2/threads", handler.v2StartThread)
+	handler.mux.HandleFunc("GET /api/v2/threads/{threadID}", handler.v2ReadThread)
+	handler.mux.HandleFunc("GET /api/v2/threads/{threadID}/events", handler.v2Events)
+	handler.mux.HandleFunc("POST /api/v2/threads/{threadID}/turns", handler.v2StartTurn)
+	handler.mux.HandleFunc("POST /api/v2/threads/{threadID}/turns/{turnID}/steer", handler.v2SteerTurn)
+	handler.mux.HandleFunc("POST /api/v2/threads/{threadID}/turns/{turnID}/interrupt", handler.v2InterruptTurn)
 
 	staticFiles, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -121,6 +152,56 @@ func (h *Handler) refreshExtensions(writer http.ResponseWriter, request *http.Re
 	}
 	if err := sessionIO.RefreshExtensions(request.Context()); err != nil {
 		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) extensionInventory(writer http.ResponseWriter, request *http.Request) {
+	runtime, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+	if _, err := h.sessionIO(runtime); err != nil {
+		http.Error(writer, err.Error(), http.StatusConflict)
+		return
+	}
+	runtime.mu.Lock()
+	sess := runtime.session
+	runtime.mu.Unlock()
+	if sess == nil {
+		http.Error(writer, "session unavailable", http.StatusConflict)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(sess.ExtensionInventory())
+}
+
+func (h *Handler) setPluginEnabled(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Enabled bool `json:"enabled"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16<<10)).Decode(&input) != nil {
+		http.Error(writer, "invalid JSON request", 400)
+		return
+	}
+	runtime, err := h.thread(request.PathValue("threadID"))
+	if err != nil {
+		http.Error(writer, err.Error(), 404)
+		return
+	}
+	if err := extensions.SetPluginEnabled(runtime.metadata.WorkspaceRoot, request.PathValue("pluginName"), input.Enabled); err != nil {
+		http.Error(writer, err.Error(), 500)
+		return
+	}
+	sessionIO, err := h.sessionIO(runtime)
+	if err != nil {
+		http.Error(writer, err.Error(), 409)
+		return
+	}
+	if err := sessionIO.RefreshExtensions(request.Context()); err != nil {
+		http.Error(writer, err.Error(), 409)
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
@@ -375,6 +456,42 @@ func (h *Handler) startThread(writer http.ResponseWriter, request *http.Request)
 	_ = json.NewEncoder(writer).Encode(metadata)
 }
 
+func (h *Handler) removeThread(writer http.ResponseWriter, request *http.Request) {
+	threadID := request.PathValue("threadID")
+	if threadID == "" {
+		http.Error(writer, "thread is not removable", http.StatusBadRequest)
+		return
+	}
+	h.threadsMu.Lock()
+	runtime := h.threads[threadID]
+	if runtime != nil && threadID != h.defaultID {
+		delete(h.threads, threadID)
+	}
+	h.threadsMu.Unlock()
+	if runtime == nil {
+		http.Error(writer, "unknown thread", http.StatusNotFound)
+		return
+	}
+	runtime.mu.Lock()
+	sessionIO := runtime.io
+	runtime.io = nil
+	runtime.session = nil
+	runtime.mu.Unlock()
+	if sessionIO != nil {
+		if err := sessionIO.Shutdown(request.Context()); err != nil {
+			if threadID != h.defaultID {
+				h.threadsMu.Lock()
+				h.threads[threadID] = runtime
+				h.threadsMu.Unlock()
+			}
+			http.Error(writer, err.Error(), http.StatusConflict)
+			return
+		}
+	}
+	h.store.remove(threadID)
+	writer.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) threadHistory(writer http.ResponseWriter, request *http.Request) {
 	threadID := request.PathValue("threadID")
 	runtime, err := h.thread(threadID)
@@ -559,13 +676,14 @@ func (h *Handler) sessionIO(runtime *threadRuntime) (*session.IO, error) {
 	if runtime.io != nil {
 		return runtime.io, nil
 	}
-	_, sessionIO, err := session.NewInWorkspaceWithRollout(
+	sess, sessionIO, err := session.NewInWorkspaceWithRollout(
 		h.client, runtime.metadata.WorkspaceRoot, h.store.rolloutPath(runtime.metadata.ID),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("start thread %s: %w", runtime.metadata.ID, err)
 	}
 	runtime.io = sessionIO
+	runtime.session = sess
 	return sessionIO, nil
 }
 
@@ -621,6 +739,19 @@ func streamTurn(request *http.Request, writer http.ResponseWriter, sessionIO *se
 				Type: "exec_approval_request", CallID: approval.CallID, TurnID: approval.TurnID,
 				Command: approval.Command, CWD: approval.CWD, Reason: approval.Reason,
 				ProposedPrefix: approval.ProposedPrefix,
+			}); err != nil {
+				return wrote, err
+			}
+			wrote = true
+		case "mcp_elicitation_request":
+			elicitation := event.Msg.McpElicitationRequest
+			fields := make([]any, 0, len(elicitation.Fields))
+			for _, field := range elicitation.Fields {
+				fields = append(fields, field)
+			}
+			if err := writeChatStreamEvent(writer, chatStreamEvent{
+				Type: "mcp_elicitation_request", ElicitationID: elicitation.ElicitationID,
+				Server: elicitation.Server, Message: elicitation.Message, Fields: fields, Schema: elicitation.Schema,
 			}); err != nil {
 				return wrote, err
 			}

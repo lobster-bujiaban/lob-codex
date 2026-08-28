@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -32,9 +35,14 @@ type Session struct {
 	workspaceRoot string
 	extensions    extensions.Catalog
 	mcpClients    []*mcp.Client
+	extensionMu   sync.RWMutex
+	mcpStatuses   map[string]MCPServerStatus
 
 	approvalMu sync.Mutex
 	approvals  map[string]pendingApproval
+
+	elicitationMu sync.Mutex
+	elicitations  map[string]pendingElicitation
 
 	activeMu sync.Mutex
 	active   *runningTask
@@ -62,6 +70,28 @@ type runningTask struct {
 type pendingApproval struct {
 	turnID string
 	result chan tools.ApprovalDecision
+}
+
+type pendingElicitation struct {
+	result chan ElicitationResponse
+}
+
+type MCPServerStatus struct {
+	Name       string     `json:"name"`
+	State      string     `json:"state"`
+	SourcePath string     `json:"source_path,omitempty"`
+	Tools      []mcp.Tool `json:"tools,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	NeedsAuth  bool       `json:"needs_auth,omitempty"`
+}
+type ExtensionInventory struct {
+	Skills     []extensions.Skill   `json:"skills"`
+	Plugins    []extensions.Plugin  `json:"plugins"`
+	MCPServers []MCPServerStatus    `json:"mcp_servers"`
+	Hooks      []extensions.Hook    `json:"hooks,omitempty"`
+	Apps       []extensions.App     `json:"apps,omitempty"`
+	Commands   []extensions.Command `json:"commands,omitempty"`
+	Agents     []extensions.Agent   `json:"agents,omitempty"`
 }
 
 // New creates a session and starts the long-running submission loop.
@@ -107,7 +137,8 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 	sess := &Session{
 		client: client, events: events, ctx: ctx, cancel: cancel,
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
-		workspaceRoot: workspaceRoot,
+		elicitations:  make(map[string]pendingElicitation),
+		workspaceRoot: workspaceRoot, mcpStatuses: map[string]MCPServerStatus{},
 	}
 	catalog, err := extensions.Load(workspaceRoot)
 	if err != nil {
@@ -115,29 +146,9 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 		return nil, nil, fmt.Errorf("load extensions: %w", err)
 	}
 	sess.extensions = catalog
-	for _, config := range catalog.MCPServers {
-		client, startErr := mcp.Start(ctx, config, workspaceRoot)
-		if startErr != nil {
-			continue
-		}
-		listed, listErr := client.ListTools(ctx)
-		if listErr != nil {
-			client.Close()
-			continue
-		}
-		registered := true
-		for _, remoteTool := range listed {
-			if err := sess.tools.Register(mcp.Executor{Client: client, Server: config.Name, Tool: remoteTool}); err != nil {
-				registered = false
-				break
-			}
-		}
-		if registered {
-			sess.mcpClients = append(sess.mcpClients, client)
-		} else {
-			client.Close()
-		}
-	}
+	sess.connectMCPServers(catalog.MCPServers)
+	sess.runHooks("sessionStart")
+	sess.runHooks("session_start")
 	if rolloutPath != "" {
 		recorder, initialHistory, err := openRollout(rolloutPath)
 		if err != nil {
@@ -207,10 +218,28 @@ func (io *IO) RespondExecApproval(ctx context.Context, response ExecApprovalResp
 	return err
 }
 
+func (io *IO) RespondElicitation(ctx context.Context, response ElicitationResponse) error {
+	_, err := io.Submit(ctx, Op{Type: OpElicitation, Elicitation: &response})
+	return err
+}
+
 // Interrupt cancels the active turn through the Session submission loop.
 func (io *IO) Interrupt(ctx context.Context) error {
 	_, err := io.Submit(ctx, Op{Type: OpInterrupt})
 	return err
+}
+
+func (io *IO) InterruptTurn(ctx context.Context, expectedTurnID string) error {
+	reply := make(chan error, 1)
+	if _, err := io.Submit(ctx, Op{Type: OpInterrupt, ExpectedTurnID: expectedTurnID, ResultReply: reply}); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-reply:
+		return err
+	}
 }
 
 func (io *IO) RefreshExtensions(ctx context.Context) error {
@@ -287,8 +316,18 @@ func (s *Session) submissionLoop(submissions <-chan Submission, done chan<- stru
 			s.handleTurnInput(submission)
 		case OpExecApproval:
 			s.handleExecApproval(submission)
+		case OpElicitation:
+			s.handleElicitation(submission)
 		case OpInterrupt:
-			s.abortActive("interrupted")
+			var err error
+			if submission.Op.ExpectedTurnID != "" && s.activeTurnID() != submission.Op.ExpectedTurnID {
+				err = fmt.Errorf("active turn is %q, expected %q", s.activeTurnID(), submission.Op.ExpectedTurnID)
+			} else {
+				s.abortActive("interrupted")
+			}
+			if submission.Op.ResultReply != nil {
+				submission.Op.ResultReply <- err
+			}
 		case OpRefreshExtensions:
 			err := s.refreshExtensions()
 			if submission.Op.ResultReply != nil {
@@ -328,26 +367,231 @@ func (s *Session) refreshExtensions() error {
 	}
 	s.mcpClients = nil
 	s.tools.UnregisterPrefix("mcp__")
-	for _, config := range catalog.MCPServers {
+	s.extensionMu.Lock()
+	s.mcpStatuses = map[string]MCPServerStatus{}
+	s.extensions = catalog
+	s.extensionMu.Unlock()
+	s.connectMCPServers(catalog.MCPServers)
+	s.runHooks("sessionStart")
+	s.runHooks("session_start")
+	return nil
+}
+
+func (s *Session) connectMCPServers(configs []extensions.MCPServer) {
+	for _, config := range configs {
+		status := MCPServerStatus{Name: config.Name, State: "starting", SourcePath: config.SourcePath}
+		s.setMCPStatus(status)
 		client, err := mcp.Start(s.ctx, config, s.workspaceRoot)
 		if err != nil {
+			status.State = "failed"
+			status.Error = err.Error()
+			if errors.Is(err, mcp.ErrOAuthRequired) {
+				status.State = "oauth_required"
+				status.NeedsAuth = true
+			}
+			s.setMCPStatus(status)
 			continue
 		}
-		listed, err := client.ListTools(s.ctx)
+		listContext, cancel := context.WithTimeout(s.ctx, config.StartupTimeout)
+		listed, err := client.ListTools(listContext)
+		cancel()
 		if err != nil {
 			client.Close()
+			status.State = "failed"
+			status.Error = err.Error()
+			s.setMCPStatus(status)
 			continue
 		}
+		registered := true
 		for _, remoteTool := range listed {
 			if err := s.tools.Register(mcp.Executor{Client: client, Server: config.Name, Tool: remoteTool}); err != nil {
-				client.Close()
-				return err
+				status.Error = err.Error()
+				registered = false
+				break
 			}
 		}
+		if !registered {
+			client.Close()
+			status.State = "failed"
+			s.setMCPStatus(status)
+			continue
+		}
+		status.State = "ready"
+		status.Tools = listed
+		s.setMCPStatus(status)
 		s.mcpClients = append(s.mcpClients, client)
+		go s.watchMCPNotifications(config, client)
 	}
-	s.extensions = catalog
-	return nil
+}
+
+func (s *Session) watchMCPNotifications(config extensions.MCPServer, client *mcp.Client) {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case request, ok := <-client.Requests():
+			if !ok {
+				return
+			}
+			s.handleMCPRequest(config, client, request)
+		case notification, ok := <-client.Notifications():
+			if !ok {
+				return
+			}
+			if notification.Method != "notifications/tools/list_changed" {
+				continue
+			}
+			s.activeMu.Lock()
+			active := s.active
+			s.activeMu.Unlock()
+			if active != nil {
+				s.extensionMu.Lock()
+				status := s.mcpStatuses[config.Name]
+				status.State = "stale"
+				s.mcpStatuses[config.Name] = status
+				s.extensionMu.Unlock()
+				continue
+			}
+			ctx, cancel := context.WithTimeout(s.ctx, config.StartupTimeout)
+			listed, err := client.ListTools(ctx)
+			cancel()
+			if err != nil {
+				status := s.mcpStatuses[config.Name]
+				status.State = "failed"
+				status.Error = err.Error()
+				if errors.Is(err, mcp.ErrOAuthRequired) {
+					status.State = "oauth_required"
+					status.NeedsAuth = true
+				}
+				s.setMCPStatus(status)
+				continue
+			}
+			s.tools.UnregisterPrefix("mcp__" + config.Name + "__")
+			for _, remoteTool := range listed {
+				_ = s.tools.Register(mcp.Executor{Client: client, Server: config.Name, Tool: remoteTool})
+			}
+			status := s.mcpStatuses[config.Name]
+			status.State = "ready"
+			status.Tools = listed
+			status.Error = ""
+			s.setMCPStatus(status)
+		}
+	}
+}
+
+func (s *Session) handleMCPRequest(config extensions.MCPServer, client *mcp.Client, request mcp.Request) {
+	if request.Method != "elicitation/create" {
+		_ = client.Respond(request.ID, nil, fmt.Errorf("unsupported MCP request %s", request.Method))
+		return
+	}
+	var params struct {
+		Message         string         `json:"message"`
+		RequestedSchema map[string]any `json:"requestedSchema"`
+	}
+	_ = json.Unmarshal(request.Params, &params)
+	response, err := s.requestElicitation(config.Name, params.Message, params.RequestedSchema)
+	if err != nil {
+		_ = client.Respond(request.ID, nil, err)
+		return
+	}
+	if response.Action == "accept" {
+		content := response.Content
+		if content == nil {
+			content = map[string]any{}
+		}
+		_ = client.Respond(request.ID, map[string]any{"action": "accept", "content": content}, nil)
+		return
+	}
+	_ = client.Respond(request.ID, map[string]any{"action": "decline"}, nil)
+}
+
+func (s *Session) requestElicitation(server, message string, schema map[string]any) (ElicitationResponse, error) {
+	id := fmt.Sprintf("mcp_elicitation:%s:%d", server, time.Now().UnixNano())
+	result := make(chan ElicitationResponse, 1)
+	s.elicitationMu.Lock()
+	s.elicitations[id] = pendingElicitation{result: result}
+	s.elicitationMu.Unlock()
+	defer func() {
+		s.elicitationMu.Lock()
+		delete(s.elicitations, id)
+		s.elicitationMu.Unlock()
+	}()
+	fields := mcp.SchemaFields(schema)
+	protocolFields := make([]protocol.McpElicitationField, 0, len(fields))
+	for _, field := range fields {
+		protocolFields = append(protocolFields, protocol.McpElicitationField(field))
+	}
+	s.sendEventRaw(protocol.Event{
+		ID:  s.activeTurnID(),
+		Msg: protocol.NewMcpElicitationRequest(id, server, message, protocolFields, schema),
+	})
+	select {
+	case <-s.ctx.Done():
+		return ElicitationResponse{}, s.ctx.Err()
+	case response := <-result:
+		return response, nil
+	}
+}
+
+func (s *Session) handleElicitation(submission Submission) {
+	if submission.Op.Elicitation == nil {
+		return
+	}
+	response := submission.Op.Elicitation
+	s.elicitationMu.Lock()
+	pending, ok := s.elicitations[response.ElicitationID]
+	s.elicitationMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case pending.result <- *response:
+	default:
+	}
+}
+
+func (s *Session) runHooks(event string) {
+	for _, hook := range s.extensions.Hooks() {
+		if !strings.EqualFold(hook.Event, event) || hook.Type != "command" || strings.TrimSpace(hook.Command) == "" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+		shell, args := []string{"sh", "-c"}, []string{hook.Command}
+		if runtime.GOOS == "windows" {
+			shell, args = []string{"cmd", "/C"}, []string{hook.Command}
+		}
+		cmd := exec.CommandContext(ctx, shell[0], append(shell[1:], args...)...)
+		cmd.Dir = s.workspaceRoot
+		_ = cmd.Run()
+		cancel()
+	}
+}
+func (s *Session) setMCPStatus(status MCPServerStatus) {
+	s.extensionMu.Lock()
+	s.mcpStatuses[status.Name] = status
+	s.extensionMu.Unlock()
+}
+func (s *Session) ExtensionInventory() ExtensionInventory {
+	s.extensionMu.RLock()
+	defer s.extensionMu.RUnlock()
+	inventory := ExtensionInventory{Plugins: append([]extensions.Plugin(nil), s.extensions.Plugins...)}
+	for _, plugin := range s.extensions.Plugins {
+		if !plugin.Enabled {
+			continue
+		}
+		inventory.Hooks = append(inventory.Hooks, plugin.Hooks...)
+		inventory.Apps = append(inventory.Apps, plugin.Apps...)
+		inventory.Commands = append(inventory.Commands, plugin.Commands...)
+		inventory.Agents = append(inventory.Agents, plugin.Agents...)
+	}
+	for _, skill := range s.extensions.Skills {
+		skill.Instructions = ""
+		inventory.Skills = append(inventory.Skills, skill)
+	}
+	for _, status := range s.mcpStatuses {
+		inventory.MCPServers = append(inventory.MCPServers, status)
+	}
+	return inventory
 }
 
 func (s *Session) recordConversationItems(items ...protocol.ResponseItem) {
@@ -389,6 +633,8 @@ func (s *Session) activeTurnID() string {
 	}
 	return s.active.turnID
 }
+
+func (s *Session) ActiveTurnID() string { return s.activeTurnID() }
 
 func (s *Session) handleExecApproval(submission Submission) {
 	if submission.Op.Approval == nil {

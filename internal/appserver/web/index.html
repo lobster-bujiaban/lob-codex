@@ -35,7 +35,7 @@
     .app-shell { display: grid; grid-template-columns: 276px minmax(0, 1fr); height: 100vh; }
     .sidebar {
       display: flex; flex-direction: column; min-height: 0; padding: 24px 18px 18px;
-      background: #f8f4ec; border-right: 1px solid var(--line);
+      overflow-y: auto; background: #f8f4ec; border-right: 1px solid var(--line);
     }
     .brand { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0 5px 22px; border: 0; background: transparent; text-align: left; cursor: pointer; }
     .brand-logo {
@@ -50,7 +50,7 @@
     .mode-button.active { background: #fff; color: var(--ink); box-shadow: 0 2px 8px rgba(37,49,67,.08); }
     .mode-button[data-mode="learning"].active { color: var(--orange-dark); }
     .is-hidden { display: none !important; }
-    body[data-mode-view="work"] .thread-list { max-height: none; }
+    body[data-mode-view="work"] .thread-list { max-height: none; overflow: visible; }
 
     .section-label { margin: 24px 7px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; }
     .concept-list { display: grid; gap: 5px; }
@@ -72,24 +72,25 @@
     .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
     .thread-header .section-label { margin: 0; }
     .new-thread { border: 0; background: transparent; color: var(--orange-dark); font-size: 11px; cursor: pointer; }
-    .thread-list { display: grid; gap: 13px; margin-top: 7px; max-height: 180px; overflow-y: auto; }
+    .thread-list { display: grid; gap: 13px; margin-top: 7px; max-height: 180px; overflow: visible; }
     .workspace-group { min-width: 0; }
     .workspace-group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 32px; padding: 4px 5px; border-radius: 8px; }
     .workspace-group-head:hover { background: #eeeae3; }
     .workspace-group-name { min-width: 0; }.workspace-group-name strong, .workspace-group-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .workspace-group-name { display: flex; align-items: center; gap: 8px; }.workspace-group-name svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    .workspace-group-name { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }.workspace-group-name svg { width: 16px; height: 16px; flex: 0 0 auto; }
     .workspace-group-name strong { font-size: 11px; font-weight: 650; }.workspace-group-name span { display: none; }
-    .workspace-group-actions { position: relative; display: flex; gap: 2px; }
-    .workspace-action { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
-    .workspace-action { opacity: 0; }.workspace-group-head:hover .workspace-action, .workspace-action:focus { opacity: 1; }
+    .workspace-group-actions { position: relative; display: flex; gap: 2px; flex: 0 0 auto; }
+    .workspace-action { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
     .workspace-action:hover { background: #ded9d0; color: var(--ink); }
+    .workspace-action.danger:hover { background: #f3d9d4; color: var(--red); }
     .workspace-action svg { width: 14px; height: 14px; }
     .workspace-menu { position: absolute; z-index: 10; width: 150px; margin: 28px 0 0 -122px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: 0 12px 30px rgba(37,49,67,.14); }
     .workspace-menu button { display: flex; width: 100%; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); font-size: 10px; text-align: left; cursor: pointer; }
     .workspace-menu button:hover { background: #f2eee8; }.workspace-menu button.danger { color: var(--red); }
-    .workspace-threads { display: grid; gap: 2px; margin-top: 2px; padding-left: 22px; }
-    .thread-item { padding: 7px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); text-align: left; cursor: pointer; }
-    .thread-item:hover, .thread-item.active { background: #e9e5df; color: var(--ink); }
+    .workspace-threads { display: grid; gap: 2px; margin-top: 2px; padding-left: 22px; min-width: 0; }
+    .thread-row { display: flex; align-items: center; gap: 2px; min-width: 0; width: 100%; }
+    .thread-item { flex: 1; min-width: 0; overflow: hidden; padding: 7px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); text-align: left; cursor: pointer; }
+    .thread-item:hover, .thread-item.active, .thread-row:hover .thread-item { background: #e9e5df; color: var(--ink); }
     .thread-item strong, .thread-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .thread-item strong { font-size: 11px; font-weight: 500; }.thread-item span { display: none; }
 
@@ -131,11 +132,6 @@
     .view-button { position: relative; padding: 0 2px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; cursor: pointer; }
     .view-button.active { color: var(--ink); }
     .view-button.active::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: var(--orange); }
-    .home-button {
-      padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px;
-      background: #fff; color: var(--ink-soft); font-size: 11px; cursor: pointer;
-    }
-    .home-button:hover { border-color: #efb99f; color: var(--orange-dark); }
     .page-title span { display: block; color: var(--muted); font-size: 11px; }
     .page-title strong { display: block; margin-top: 1px; font-size: 15px; }
     .status-pill {
@@ -143,6 +139,11 @@
       border: 1px solid #cfe5d8; border-radius: 999px; background: #f3fbf6; color: var(--green); font-size: 11px; font-weight: 650;
     }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(36,133,91,.1); }
+    .extensions-button { padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink-soft); font-size: 11px; cursor: pointer; }
+    .extensions-dialog { width: min(720px, calc(100vw - 28px)); }
+    .extensions-shell { position: relative; padding: 25px; }.extensions-shell h2 { margin: 0; font-size: 19px; }.extensions-shell > p { margin: 6px 0 16px; color: var(--muted); font-size: 11px; }
+    .extensions-actions { display:flex;gap:8px;margin-bottom:15px }.extensions-actions button { padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer }.extensions-actions .primary{background:var(--ink);color:#fff}
+    .extensions-section { margin-top: 15px; }.extensions-section h3 { margin:0 0 7px;font-size:13px }.extension-list{display:grid;gap:7px}.extension-item{padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#faf9f6}.extension-head{display:flex;justify-content:space-between;gap:10px}.extension-name{font-size:12px;font-weight:700}.extension-state{font-size:10px;color:var(--muted)}.extension-state.ready{color:var(--green)}.extension-state.failed{color:var(--red)}.extension-meta{margin-top:4px;color:var(--muted);font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.extension-error{margin-top:6px;color:var(--red);font-size:10px}.extension-tools{margin-top:6px;color:#5b4ba8;font-size:10px}
 
     .conversation { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
     #messages {
@@ -224,6 +225,12 @@
     .approval-actions .approve { border-color: var(--orange); background: var(--orange); color: #fff; }
     .approval-actions button:disabled { opacity: .55; cursor: default; }
     .approval-result { margin-top: 10px; color: var(--muted); font-size: 11px; }
+    .elicitation-fields { display: grid; gap: 8px; margin-top: 10px; }
+    .elicitation-fields label { display: grid; gap: 4px; color: var(--ink-soft); font-size: 11px; }
+    .elicitation-fields input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .extension-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .extension-actions button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; font-size: 10px; }
+    .extension-actions button.danger { color: var(--red); }
     .typing::after { content: ""; display: inline-block; width: 5px; height: 14px; margin-left: 4px; background: var(--orange); vertical-align: -2px; animation: blink .7s infinite alternate; }
     @keyframes enter { from { opacity: 0; transform: translateY(7px); } }
     @keyframes blink { to { opacity: .15; } }
@@ -352,7 +359,7 @@
             <button class="view-button active" type="button" data-view="conversation" role="tab" aria-selected="true">对话</button>
             <button class="view-button" type="button" data-view="flow" role="tab" aria-selected="false">流程</button>
           </div>
-          <button id="home-button" class="home-button" type="button">返回首页</button>
+          <button id="extensions-button" class="extensions-button" type="button">扩展</button>
           <div class="status-pill"><span class="status-dot"></span>Responses API 已连接</div>
         </div>
       </header>
@@ -409,6 +416,16 @@
     </div>
   </dialog>
 
+  <dialog id="extensions-dialog" class="qr-dialog extensions-dialog">
+    <div class="extensions-shell">
+      <button id="extensions-close" class="qr-dialog-close" type="button" aria-label="关闭">×</button>
+      <h2>Skills、插件与 MCP</h2>
+      <p>显示当前 Thread 实际加载的扩展及失败原因。</p>
+      <div class="extensions-actions"><button id="extensions-refresh" class="primary" type="button">重新扫描并连接</button></div>
+      <div id="extensions-content">正在读取扩展状态…</div>
+    </div>
+  </dialog>
+
   <dialog id="workspace-dialog" class="qr-dialog workspace-dialog">
     <form id="workspace-form">
       <h2>新建工作区对话</h2>
@@ -437,10 +454,11 @@
     const workspacePath = document.querySelector('#workspace-path');
     const threadList = document.querySelector('#thread-list');
     const workspaceDialog = document.querySelector('#workspace-dialog');
+    const extensionsDialog = document.querySelector('#extensions-dialog');
+    const extensionsContent = document.querySelector('#extensions-content');
     const workspaceForm = document.querySelector('#workspace-form');
     const workspaceInput = document.querySelector('#workspace-input');
     const workspaceError = document.querySelector('#workspace-error');
-    const homeButton = document.querySelector('#home-button');
     const conversationView = document.querySelector('.conversation');
     const flowView = document.querySelector('#flow-view');
     const flowSummary = document.querySelector('#flow-summary');
@@ -581,7 +599,6 @@
       document.querySelectorAll('.work-only').forEach((element) => {
         element.classList.toggle('is-hidden', mode !== 'work');
       });
-      homeButton.textContent = mode === 'learning' ? '返回学习首页' : '清空对话视图';
       prompt.placeholder = mode === 'learning'
         ? '问一个关于 Codex Harness 的问题…'
         : '描述你想在当前工作区完成的任务…';
@@ -625,14 +642,13 @@
         create.textContent = '新建对话';
         create.addEventListener('click', () => submitThread(workspaceRoot, false));
         menu.append(create);
-        if (!workspaceThreads.some((thread) => thread.id === 'current-workspace')) {
-          const remove = document.createElement('button');
-          remove.className = 'danger';
-          remove.type = 'button';
-          remove.textContent = '删除项目及磁盘文件';
-          remove.addEventListener('click', () => removeWorkspace(workspaceRoot));
-          menu.append(remove);
-        }
+        const isDefaultWorkspace = workspaceThreads.some((thread) => thread.id === 'current-workspace');
+        const remove = document.createElement('button');
+        remove.className = 'danger';
+        remove.type = 'button';
+        remove.textContent = isDefaultWorkspace ? '删除全部对话' : '删除项目及磁盘文件';
+        remove.addEventListener('click', () => removeWorkspace(workspaceRoot));
+        menu.append(remove);
         more.addEventListener('click', (event) => {
           event.stopPropagation();
           document.querySelectorAll('.workspace-menu').forEach((other) => {
@@ -641,11 +657,13 @@
           menu.classList.toggle('is-hidden');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
-        actions.append(more, menu);
+        actions.append(more, createDeleteButton(isDefaultWorkspace ? '删除全部对话' : '删除工作区', () => removeWorkspace(workspaceRoot)), menu);
         head.append(name, actions);
         const conversations = document.createElement('div');
         conversations.className = 'workspace-threads';
         workspaceThreads.forEach((thread, index) => {
+          const row = document.createElement('div');
+          row.className = 'thread-row';
           const button = document.createElement('button');
           button.className = `thread-item${thread.id === activeThreadID ? ' active' : ''}`;
           button.type = 'button';
@@ -657,7 +675,8 @@
             : '应用启动工作区';
           button.append(label, created);
           button.addEventListener('click', () => selectThread(thread.id));
-          conversations.append(button);
+          row.append(button, createDeleteButton('删除对话', () => removeThread(thread.id)));
+          conversations.append(row);
         });
         group.append(head, conversations);
         threadList.append(group);
@@ -815,6 +834,204 @@
       renderThreads();
     }
 
+    function renderExtensions(inventory) {
+      extensionsContent.replaceChildren();
+      const appendActions = (row, buttons) => {
+        if (!buttons.length) return;
+        const actions = document.createElement('div');
+        actions.className = 'extension-actions';
+        buttons.forEach((button) => actions.append(button));
+        row.append(actions);
+      };
+      const sections = [
+        ['MCP Servers', inventory.mcp_servers || [], (server) => {
+          const tools = (server.tools || []).map((tool) => tool.name).join('、');
+          const buttons = [];
+          if (server.needs_auth || server.state === 'oauth_required') {
+            const login = document.createElement('button');
+            login.type = 'button';
+            login.textContent = 'OAuth 登录';
+            login.addEventListener('click', async () => {
+              login.disabled = true;
+              const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/mcp/${encodeURIComponent(server.name)}/oauth/login`, { method: 'POST' });
+              if (!response.ok) { login.textContent = `失败：${await response.text()}`; login.disabled = false; return; }
+              const payload = await response.json();
+              if (payload.authorization_url) window.open(payload.authorization_url, '_blank');
+              login.textContent = '已打开登录页，完成后点刷新';
+            });
+            buttons.push(login);
+          }
+          return { name: server.name, state: server.state, meta: server.source_path, detail: tools ? `工具：${tools}` : '', error: server.error, buttons };
+        }],
+        ['插件', inventory.plugins || [], (plugin) => {
+          const name = plugin.Name || plugin.name;
+          const enabled = plugin.Enabled !== false && plugin.enabled !== false;
+          const buttons = [];
+          const toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.textContent = enabled ? '禁用' : '启用';
+          toggle.addEventListener('click', async () => {
+            toggle.disabled = true;
+            const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/plugins/${encodeURIComponent(name)}/enabled`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !enabled })
+            });
+            if (!response.ok) { toggle.textContent = `失败：${await response.text()}`; toggle.disabled = false; return; }
+            await loadExtensions();
+          });
+          buttons.push(toggle);
+          if ((plugin.Source || plugin.source) === 'marketplace') {
+            const uninstall = document.createElement('button');
+            uninstall.className = 'danger';
+            uninstall.type = 'button';
+            uninstall.textContent = '卸载';
+            uninstall.addEventListener('click', async () => {
+              if (!confirm(`卸载插件 ${name}？`)) return;
+              uninstall.disabled = true;
+              const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/plugins/${encodeURIComponent(name)}`, { method: 'DELETE' });
+              if (!response.ok) { uninstall.textContent = `失败：${await response.text()}`; uninstall.disabled = false; return; }
+              await loadExtensions();
+            });
+            buttons.push(uninstall);
+          }
+          const extras = [];
+          (plugin.hooks || []).forEach((hook) => extras.push(`hook:${hook.event}`));
+          (plugin.apps || []).forEach((app) => extras.push(`app:${app.name}`));
+          (plugin.commands || []).forEach((command) => extras.push(`cmd:${command.name}`));
+          (plugin.agents || []).forEach((agent) => extras.push(`agent:${agent.name}`));
+          return { name, state: enabled ? 'ready' : 'disabled', meta: plugin.Path || plugin.path, detail: [plugin.Description || plugin.description, extras.join(' · ')].filter(Boolean).join(' · '), buttons };
+        }],
+        ['Skills', inventory.skills || [], (skill) => ({ name: skill.Name || skill.name, state: 'ready', meta: skill.Path || skill.path, detail: skill.Description || skill.description, buttons: [] })],
+        ['Hooks', inventory.hooks || [], (hook) => ({ name: hook.event, state: hook.type || 'command', meta: hook.path, detail: hook.command, buttons: [] })],
+        ['Apps', inventory.apps || [], (app) => ({ name: app.name, state: 'ready', meta: app.path, detail: app.description, buttons: [] })],
+        ['Commands', inventory.commands || [], (command) => ({ name: command.name, state: 'ready', meta: command.path, detail: command.description, buttons: [] })],
+        ['Agents', inventory.agents || [], (agent) => ({ name: agent.name, state: 'ready', meta: agent.path, detail: agent.description, buttons: [] })]
+      ];
+      sections.forEach(([title, items, normalize]) => {
+        const section = document.createElement('section');
+        section.className = 'extensions-section';
+        const heading = document.createElement('h3');
+        heading.textContent = `${title} · ${items.length}`;
+        const list = document.createElement('div');
+        list.className = 'extension-list';
+        if (!items.length) {
+          const empty = document.createElement('div');
+          empty.className = 'extension-item';
+          empty.textContent = '未发现';
+          list.append(empty);
+        }
+        items.forEach((raw) => {
+          const item = normalize(raw);
+          const row = document.createElement('div');
+          row.className = 'extension-item';
+          const head = document.createElement('div');
+          head.className = 'extension-head';
+          const name = document.createElement('span');
+          name.className = 'extension-name';
+          name.textContent = item.name;
+          const state = document.createElement('span');
+          state.className = `extension-state ${item.state}`;
+          state.textContent = item.state;
+          head.append(name, state);
+          row.append(head);
+          if (item.meta) {
+            const meta = document.createElement('div');
+            meta.className = 'extension-meta';
+            meta.textContent = item.meta;
+            row.append(meta);
+          }
+          if (item.detail) {
+            const detail = document.createElement('div');
+            detail.className = 'extension-tools';
+            detail.textContent = item.detail;
+            row.append(detail);
+          }
+          if (item.error) {
+            const error = document.createElement('div');
+            error.className = 'extension-error';
+            error.textContent = item.error;
+            row.append(error);
+          }
+          appendActions(row, item.buttons || []);
+          list.append(row);
+        });
+        section.append(heading, list);
+        extensionsContent.append(section);
+      });
+      loadMarketplace(inventory);
+    }
+
+    async function loadMarketplace() {
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/marketplace`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        const section = document.createElement('section');
+        section.className = 'extensions-section';
+        const heading = document.createElement('h3');
+        const entries = (payload.marketplaces || []).flatMap((marketplace) => (marketplace.plugins || []).map((plugin) => ({ ...plugin, marketplace: marketplace.display_name || marketplace.name, marketplace_path: marketplace.path })));
+        heading.textContent = `Marketplace · ${entries.length}`;
+        const list = document.createElement('div');
+        list.className = 'extension-list';
+        if (!entries.length) {
+          const empty = document.createElement('div');
+          empty.className = 'extension-item';
+          empty.textContent = '未发现 marketplace.json';
+          list.append(empty);
+        }
+        entries.forEach((entry) => {
+          const row = document.createElement('div');
+          row.className = 'extension-item';
+          const head = document.createElement('div');
+          head.className = 'extension-head';
+          const name = document.createElement('span');
+          name.className = 'extension-name';
+          name.textContent = entry.name;
+          const state = document.createElement('span');
+          state.className = `extension-state ${entry.installed ? 'ready' : 'disabled'}`;
+          state.textContent = entry.installed ? 'installed' : 'available';
+          head.append(name, state);
+          row.append(head);
+          const meta = document.createElement('div');
+          meta.className = 'extension-meta';
+          meta.textContent = `${entry.marketplace || ''} · ${entry.path || ''}`;
+          row.append(meta);
+          if (!entry.installed) {
+            const install = document.createElement('button');
+            install.type = 'button';
+            install.textContent = '安装';
+            install.addEventListener('click', async () => {
+              install.disabled = true;
+              const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/plugins/install`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ marketplace_path: entry.marketplace_path, plugin_name: entry.name })
+              });
+              if (!response.ok) { install.textContent = `失败：${await response.text()}`; install.disabled = false; return; }
+              await loadExtensions();
+            });
+            const actions = document.createElement('div');
+            actions.className = 'extension-actions';
+            actions.append(install);
+            row.append(actions);
+          }
+          list.append(row);
+        });
+        section.append(heading, list);
+        extensionsContent.append(section);
+      } catch (_) {}
+    }
+
+    async function loadExtensions() {
+      extensionsContent.textContent = '正在读取扩展状态…';
+      const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/extensions`);
+      if (!response.ok) throw new Error(await response.text());
+      renderExtensions(await response.json());
+    }
+
+    async function showExtensions() {
+      extensionsDialog.showModal();
+      try { await loadExtensions(); } catch (error) { extensionsContent.textContent = `读取失败：${error.message}`; }
+    }
+
     function createThread() {
       const current = threads.find((thread) => thread.id === activeThreadID);
       workspaceInput.value = current?.workspace_root || '';
@@ -850,7 +1067,66 @@
       selectThread(thread.id);
     }
 
+    function createDeleteButton(label, onClick) {
+      const button = document.createElement('button');
+      button.className = 'workspace-action danger';
+      button.type = 'button';
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      button.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M8 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1M4 7h16M9 11v6M15 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onClick();
+      });
+      return button;
+    }
+
+    async function removeThread(threadID) {
+      const thread = threads.find((item) => item.id === threadID);
+      const title = thread?.title || '新对话';
+      if (!confirm(`删除对话“${title}”？\n\n只删除会话记录，不会删除工作区文件。`)) return;
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        if (threadID === 'current-workspace') {
+          if (thread) thread.title = '';
+          await selectThread(threadID);
+          return;
+        }
+        const workspaceRoot = thread?.workspace_root;
+        threads = threads.filter((item) => item.id !== threadID);
+        if (activeThreadID === threadID) {
+          activeThreadID = threads.find((item) => item.workspace_root === workspaceRoot)?.id
+            || threads[0]?.id
+            || 'current-workspace';
+          await selectThread(activeThreadID);
+        } else {
+          renderThreads();
+        }
+      } catch (error) {
+        alert(`删除对话失败：${error.message}`);
+      }
+    }
+
     async function removeWorkspace(workspaceRoot) {
+      const group = threads.filter((thread) => thread.workspace_root === workspaceRoot);
+      const isDefaultWorkspace = group.some((thread) => thread.id === 'current-workspace');
+      if (isDefaultWorkspace) {
+        if (!confirm(`删除工作区“${workspaceRoot}”下的全部对话？\n\n不会删除磁盘上的项目文件。`)) return;
+        try {
+          for (const thread of group) {
+            const response = await fetch(`/api/threads/${encodeURIComponent(thread.id)}`, { method: 'DELETE' });
+            if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+          }
+          threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot || thread.id === 'current-workspace');
+          const current = threads.find((thread) => thread.id === 'current-workspace');
+          if (current) current.title = '';
+          await selectThread('current-workspace');
+        } catch (error) {
+          alert(`删除对话失败：${error.message}`);
+        }
+        return;
+      }
       if (!confirm(`永久删除工作区“${workspaceRoot}”及其全部对话？\n\n磁盘上的项目文件会被删除，此操作不可恢复。`)) return;
       try {
         const response = await fetch('/api/workspaces', {
@@ -858,7 +1134,6 @@
           body: JSON.stringify({ workspace_root: workspaceRoot })
         });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-        activeTurnID = response.headers.get('X-Turn-ID') || '';
         const removedIDs = new Set(threads.filter((thread) => thread.workspace_root === workspaceRoot).map((thread) => thread.id));
         threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot);
         if (removedIDs.has(activeThreadID)) {
@@ -1267,6 +1542,67 @@
       card.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
+    function addElicitation(event, threadID) {
+      const card = document.createElement('div');
+      card.className = 'approval-card';
+      const title = document.createElement('h3');
+      title.textContent = `MCP 需要补充信息 · ${event.server || ''}`;
+      const reason = document.createElement('p');
+      reason.textContent = event.message || 'MCP Server 请求填写表单';
+      const fields = document.createElement('div');
+      fields.className = 'elicitation-fields';
+      const inputs = {};
+      (event.fields || []).forEach((field) => {
+        const label = document.createElement('label');
+        label.textContent = field.title || field.name;
+        const input = document.createElement('input');
+        input.type = field.type === 'number' || field.type === 'integer' ? 'number' : field.type === 'boolean' ? 'checkbox' : 'text';
+        input.placeholder = field.description || field.name;
+        inputs[field.name] = input;
+        label.append(input);
+        fields.append(label);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'approval-actions';
+      const accept = document.createElement('button');
+      accept.className = 'approve';
+      accept.type = 'button';
+      accept.textContent = '提交';
+      const decline = document.createElement('button');
+      decline.type = 'button';
+      decline.textContent = '拒绝';
+      const result = document.createElement('div');
+      result.className = 'approval-result';
+      const respond = async (action) => {
+        accept.disabled = true;
+        decline.disabled = true;
+        const content = {};
+        Object.entries(inputs).forEach(([name, input]) => {
+          content[name] = input.type === 'checkbox' ? input.checked : input.value;
+        });
+        result.textContent = '正在提交…';
+        try {
+          const response = await fetch(`/api/elicitations/${encodeURIComponent(event.elicitation_id)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thread_id: threadID, action, content })
+          });
+          if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+          result.textContent = action === 'accept' ? '已提交给 MCP Server' : '已拒绝 elicitation';
+        } catch (error) {
+          accept.disabled = false;
+          decline.disabled = false;
+          result.textContent = `提交失败：${error.message}`;
+        }
+      };
+      accept.addEventListener('click', () => respond('accept'));
+      decline.addEventListener('click', () => respond('decline'));
+      actions.append(accept, decline);
+      card.append(title, reason, fields, actions, result);
+      messages.append(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
     async function submitPrompt(text) {
       if ((!text && !pendingImages.length) || send.disabled) return;
       const request = new AbortController();
@@ -1325,6 +1661,8 @@
             addTerminalInteraction(toolCalls, event);
           } else if (event.type === 'exec_approval_request') {
             addApproval(event, requestThreadID);
+          } else if (event.type === 'mcp_elicitation_request') {
+            addElicitation(event, requestThreadID);
           } else if (event.type === 'context_compaction') {
             addActivity(`已压缩上下文 · 约 ${event.before_tokens} → ${event.after_tokens} Token`, false);
           } else if (event.type === 'error') {
@@ -1440,7 +1778,16 @@
       button.addEventListener('click', () => setView(button.dataset.view));
     });
     document.querySelector('#home-brand').addEventListener('click', () => showHome());
-    document.querySelector('#home-button').addEventListener('click', () => showHome());
+    document.querySelector('#extensions-button').addEventListener('click', showExtensions);
+    document.querySelector('#extensions-close').addEventListener('click', () => extensionsDialog.close());
+    document.querySelector('#extensions-refresh').addEventListener('click', async () => {
+      extensionsContent.textContent = '正在重新扫描并连接…';
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/extensions/refresh`, { method: 'POST' });
+        if (!response.ok) throw new Error(await response.text());
+        await loadExtensions();
+      } catch (error) { extensionsContent.textContent = `刷新失败：${error.message}`; }
+    });
     document.querySelector('#new-thread').addEventListener('click', createThread);
     document.querySelector('#new-conversation').addEventListener('click', newConversation);
     document.addEventListener('click', () => {

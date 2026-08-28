@@ -21,6 +21,7 @@ type EventMsg struct {
 	TurnComplete             *TurnCompleteEvent             `json:"turn_complete,omitempty"`
 	TurnAborted              *TurnAbortedEvent              `json:"turn_aborted,omitempty"`
 	Error                    *ErrorEvent                    `json:"error,omitempty"`
+	McpElicitationRequest    *McpElicitationRequestEvent    `json:"mcp_elicitation_request,omitempty"`
 }
 
 type ContextCompactionEvent struct {
@@ -115,6 +116,30 @@ type TurnAbortedEvent struct {
 // ErrorEvent is a model-visible or terminal error emitted during a turn.
 type ErrorEvent struct {
 	Message string `json:"message"`
+}
+
+type McpElicitationField struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type McpElicitationRequestEvent struct {
+	ElicitationID string                `json:"elicitation_id"`
+	Server        string                `json:"server"`
+	Message       string                `json:"message"`
+	Fields        []McpElicitationField `json:"fields,omitempty"`
+	Schema        map[string]any        `json:"schema,omitempty"`
+}
+
+func NewMcpElicitationRequest(id, server, message string, fields []McpElicitationField, schema map[string]any) EventMsg {
+	return EventMsg{
+		Type: "mcp_elicitation_request",
+		McpElicitationRequest: &McpElicitationRequestEvent{
+			ElicitationID: id, Server: server, Message: message, Fields: fields, Schema: schema,
+		},
+	}
 }
 
 func NewTurnStarted(turnID string, startedAt int64) EventMsg {

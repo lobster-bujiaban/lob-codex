@@ -20,8 +20,8 @@
 | 模型客户端 | `codex-rs/core` 模型客户端、`codex-rs/codex-api/src/sse/responses.rs` | `internal/model` | 部分对齐 | Responses API 接收 `ResponseItem[]`，消费文本 Delta、OutputItemDone、Completed usage/response_id；支持建连/429/5xx 有界重试、Reasoning Item 与并行工具调用 |
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
 | 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin 与后台终端清理 |
-| MCP/Skills/插件 | `codex-rs/core/src/session/mcp.rs`、`codex-rs/core-skills`、`codex-rs/core-plugins` | `internal/mcp`、`internal/extensions` | 部分对齐 | 已实现工作区/插件发现、Skill 显式提及注入、stdio MCP initialize/tools/list/tools/call、只读提示与写操作审批；动态刷新、elicitation、OAuth 和 marketplace 安装尚未实现 |
-| App Server | `codex-rs/app-server` | `internal/appserver` | 部分对齐 | 已实现 thread start/list/fork、thread_id 路由、独立 Session、workspace/History 恢复及 rollout 运行时流程视图；完整 Codex Turn 元数据尚未实现 |
+| MCP/Skills/插件 | `codex-rs/core/src/session/mcp.rs`、`codex-rs/core-skills`、`codex-rs/core-plugins` | `internal/mcp`、`internal/extensions` | 部分对齐 | 已实现 stdio/HTTP MCP、启动超时与有界重试、stdio/SSE 上的 tools/list_changed 与 elicitation schema 表单、文件型 OAuth token 与 GUI 登录、扩展状态面板、插件启停/本地 marketplace 安装卸载，以及 plugin 贡献的 hooks/apps/commands/agents；Codex keyring OAuth、远程 marketplace 与完整 hooks 引擎尚未对齐 |
+| App Server | `codex-rs/app-server`、`app-server-protocol/v2` | `internal/appserver` | 部分对齐 | 已实现 GUI API 与 v2 兼容 REST 面：thread start/list/read、turn start/steer/interrupt、独立 Session、canonical Turn 状态和 rollout ordinal 事件恢复 |
 
 ## Session → Turn → Step 调用链
 
@@ -246,12 +246,13 @@ Session，再删除项目目录与对应 thread metadata/rollout；根目录、�
 - 历史页面由 canonical ResponseItem 重建消息与工具卡片；尚未恢复 Codex 完整 Turn 状态、审批卡片和终端增量事件。
 - Fork 已支持历史前缀与 workspace 继承，尚未持久化 Codex 的 `forked_from_id` 和 ordinal lineage 元数据。
 - 运行时流程视图从 canonical ResponseItem 与 TurnComplete EventMsg 重建 Turn、Step、工具调用、精确 token usage 和汇总指标；审批与终端增量事件的完整回放仍待补齐。
-- 插件首版发现工作区 `plugins/*/.codex-plugin/plugin.json` 与 `.agents/plugins/*`，默认加载 `skills/`、`.mcp.json` 并合并 manifest 补充路径；尚未实现全局 marketplace、安装/卸载和启停状态。
+- 插件发现工作区 `plugins/*/.codex-plugin/plugin.json` 与 `.agents/plugins/*`，加载 skills、MCP、hooks、apps、commands、agents；本地 `marketplace.json` 可安装到 `.agents/plugins/` 并卸载；尚未实现 Codex 远程 marketplace、Git/npm source 与 keyring 凭据。
 - Skill 首版解析 `SKILL.md` 的 name/description，并在用户显式 `$skill-name` 提及时以独立 developer item 注入；尚未实现 Codex 的模型辅助隐式选择与可用 Skill 列表提示。
-- MCP 首版支持本地 stdio JSON-RPC 和工具列表启动加载；尚未实现运行中 tools/list_changed 刷新、HTTP transport、elicitation、OAuth 与连接重试。
+- MCP 支持 stdio JSON-RPC 与 Streamable HTTP（POST JSON/SSE + GET 会话流）、启动超时、连接有界重试、`tools/list_changed` 刷新、elicitation schema 表单，以及 RFC 9728/7591 文件型 OAuth；尚未实现 Codex RMCP keyring、executor 路由 OAuth 与完整 OpenAI form elicitation。
+- App Server v2 兼容层提供 `/api/v2/threads`、`thread read(includeTurns)`、turn start/steer/interrupt 与 `/events?after=<ordinal>`；实时 NDJSON 使用 Codex v2 notification method 命名。原生 JSON-RPC initialize/initialized 握手、WebSocket/stdio transport、通知 opt-out 和分页 thread list 尚未实现。
+- 断线恢复只重放 rollout 中的 durable SessionMeta/TurnContext/EventMsg/ResponseItem/Compacted；文本与终端 Delta 按 Codex 的 ephemeral 边界不伪造重放，客户端从 canonical item/turn 状态恢复后继续接收新通知。
 - 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
 
 ## 下一步
 
-继续实现 unified exec 远程执行器抽象；随后补齐 rollout 的 SessionMeta、TurnContext 与完整 Turn
-重建语义。
+继续补齐 App Server 原生 JSON-RPC transport、通知订阅能力和分页 Thread Store；随后实现远程执行器与 Windows 沙箱。

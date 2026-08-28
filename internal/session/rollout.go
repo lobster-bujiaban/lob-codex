@@ -75,6 +75,99 @@ type FlowSummary struct {
 	UsageExact   bool  `json:"usage_exact"`
 }
 
+type StoredEvent struct {
+	Ordinal   uint64          `json:"ordinal"`
+	Timestamp string          `json:"timestamp"`
+	Type      string          `json:"type"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+type StoredTurn struct {
+	ID               string                  `json:"id"`
+	Status           string                  `json:"status"`
+	Items            []protocol.ResponseItem `json:"items"`
+	StartedAt        int64                   `json:"started_at,omitempty"`
+	CompletedAt      int64                   `json:"completed_at,omitempty"`
+	Error            *protocol.ErrorEvent    `json:"error,omitempty"`
+	Usage            *protocol.TokenUsage    `json:"usage,omitempty"`
+	LastAgentMessage *string                 `json:"last_agent_message,omitempty"`
+	ResponseID       string                  `json:"response_id,omitempty"`
+}
+
+func ReadRolloutEvents(path string, after uint64) ([]StoredEvent, uint64, error) {
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, after, nil
+	}
+	if err != nil {
+		return nil, after, err
+	}
+	defer file.Close()
+	var events []StoredEvent
+	next := after
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64<<10), 4<<20)
+	for scanner.Scan() {
+		var line rolloutLine
+		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
+			return nil, next, err
+		}
+		if line.Ordinal < after {
+			continue
+		}
+		events = append(events, StoredEvent{Ordinal: line.Ordinal, Timestamp: line.Timestamp, Type: line.Type, Payload: line.Payload})
+		if line.Ordinal >= next {
+			next = line.Ordinal + 1
+		}
+	}
+	return events, next, scanner.Err()
+}
+
+func ReadRolloutTurns(path string) ([]StoredTurn, error) {
+	events, _, err := ReadRolloutEvents(path, 0)
+	if err != nil {
+		return nil, err
+	}
+	var turns []StoredTurn
+	current := -1
+	for _, event := range events {
+		switch event.Type {
+		case "event_msg":
+			var message protocol.EventMsg
+			if json.Unmarshal(event.Payload, &message) != nil {
+				continue
+			}
+			if message.TurnStarted != nil {
+				turns = append(turns, StoredTurn{ID: message.TurnStarted.TurnID, Status: "inProgress", StartedAt: message.TurnStarted.StartedAt})
+				current = len(turns) - 1
+			}
+			if current >= 0 && message.TurnComplete != nil {
+				turns[current].Status = "completed"
+				turns[current].CompletedAt = message.TurnComplete.CompletedAt
+				turns[current].Error = message.TurnComplete.Error
+				turns[current].Usage = message.TurnComplete.Usage
+				turns[current].LastAgentMessage = message.TurnComplete.LastAgentMessage
+				turns[current].ResponseID = message.TurnComplete.ResponseID
+				if message.TurnComplete.Error != nil {
+					turns[current].Status = "failed"
+				}
+			}
+			if current >= 0 && message.TurnAborted != nil {
+				turns[current].Status = "interrupted"
+				turns[current].CompletedAt = message.TurnAborted.CompletedAt
+			}
+		case "response_item":
+			if current >= 0 {
+				var item protocol.ResponseItem
+				if json.Unmarshal(event.Payload, &item) == nil {
+					turns[current].Items = append(turns[current].Items, item)
+				}
+			}
+		}
+	}
+	return turns, nil
+}
+
 func openRollout(path string) (*rolloutRecorder, []protocol.ResponseItem, error) {
 	items, nextOrdinal, err := ReadRollout(path)
 	if err != nil {

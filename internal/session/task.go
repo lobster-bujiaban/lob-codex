@@ -85,4 +85,6 @@ func (s *Session) onTaskFinished(
 			},
 		},
 	})
+	s.runHooks("turn_complete")
+	s.runHooks("sessionEnd")
 }
