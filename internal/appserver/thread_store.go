@@ -37,6 +37,26 @@ func (store threadStore) remove(threadID string) {
 	_ = os.Remove(store.rolloutPath(threadID))
 }
 
+func (store threadStore) hiddenPath(threadID string) string {
+	return filepath.Join(store.directory, threadID+".hidden")
+}
+
+func (store threadStore) hide(threadID string) {
+	if err := os.MkdirAll(store.directory, 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(store.hiddenPath(threadID), nil, 0o600)
+}
+
+func (store threadStore) unhide(threadID string) {
+	_ = os.Remove(store.hiddenPath(threadID))
+}
+
+func (store threadStore) hidden(threadID string) bool {
+	_, err := os.Stat(store.hiddenPath(threadID))
+	return err == nil
+}
+
 func (store threadStore) create(workspaceRoot string) (threadMetadata, error) {
 	workspaceRoot, err := validateWorkspace(workspaceRoot)
 	if err != nil {

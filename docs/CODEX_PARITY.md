@@ -195,8 +195,10 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 文件夹选择器取得路径，再复用相同的 workspace 校验与 `thread/start` 主链；其他平台当前保留
 明确的“不支持原生选择器”错误，仍可手动输入绝对路径。
 
-工作区删除属于 LOB Codex 本地管理扩展：只允许删除已登记的非默认工作区，先关闭其全部
-Session，再删除项目目录与对应 thread metadata/rollout；根目录、用户主目录和当前默认工作区受保护。
+工作区删除属于 LOB Codex 本地管理扩展：删除已登记工作区时先关闭其全部 Session，再删除
+该工作区在 `tmp/threads` 中的会话记录并从侧栏移除；若该目录不是当前进程工作区，再删除
+其 `<workspace>/tmp` 运行数据。不删除项目源码。根目录、用户主目录和当前进程工作区的
+`tmp` 不整目录删除。
 
 ## ExecPolicy 与 Session Prefix Rule
 

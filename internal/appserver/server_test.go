@@ -677,3 +677,131 @@ func TestPersistentApprovalRuleSurvivesSessionRestart(t *testing.T) {
 		t.Fatalf("second answer = %q, want matched persistent rule", secondAnswer)
 	}
 }
+
+func TestRemoveWorkspaceDeletesTmpAndHidesDefault(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Chdir(dataRoot)
+	extra := filepath.Join(dataRoot, "extra-project")
+	if err := os.Mkdir(extra, 0o755); err != nil {
+		t.Fatalf("Mkdir extra: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(extra, "keep-me.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(extra, "tmp"), 0o755); err != nil {
+		t.Fatalf("Mkdir extra tmp: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(extra, "tmp", "exec-policy.rules"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile extra tmp: %v", err)
+	}
+
+	handler := appserver.NewHandler(model.NewFakeClient())
+	defer handler.Close(context.Background())
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	createBody, err := json.Marshal(map[string]string{"workspace_root": extra})
+	if err != nil {
+		t.Fatalf("marshal create: %v", err)
+	}
+	createResponse, err := http.Post(server.URL+"/api/threads", "application/json", strings.NewReader(string(createBody)))
+	if err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	if createResponse.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(createResponse.Body)
+		createResponse.Body.Close()
+		t.Fatalf("create status = %d, body = %s", createResponse.StatusCode, body)
+	}
+	createResponse.Body.Close()
+
+	listResponse, err := http.Get(server.URL + "/api/threads")
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	var listed struct {
+		Threads []struct {
+			ID            string `json:"id"`
+			WorkspaceRoot string `json:"workspace_root"`
+		} `json:"threads"`
+	}
+	if err := json.NewDecoder(listResponse.Body).Decode(&listed); err != nil {
+		listResponse.Body.Close()
+		t.Fatalf("decode list: %v", err)
+	}
+	listResponse.Body.Close()
+
+	var defaultRoot, extraRoot, extraID string
+	for _, thread := range listed.Threads {
+		switch thread.ID {
+		case "current-workspace":
+			defaultRoot = thread.WorkspaceRoot
+		default:
+			extraID = thread.ID
+			extraRoot = thread.WorkspaceRoot
+		}
+	}
+	if defaultRoot == "" || extraRoot == "" || extraID == "" {
+		t.Fatalf("listed threads = %+v", listed.Threads)
+	}
+
+	deleteWorkspace := func(root string) {
+		t.Helper()
+		body, err := json.Marshal(map[string]string{"workspace_root": root})
+		if err != nil {
+			t.Fatalf("marshal delete: %v", err)
+		}
+		request, err := http.NewRequest(http.MethodDelete, server.URL+"/api/workspaces", strings.NewReader(string(body)))
+		if err != nil {
+			t.Fatalf("new delete request: %v", err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("delete workspace: %v", err)
+		}
+		payload, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != http.StatusNoContent {
+			t.Fatalf("delete %s status = %d, body = %s", root, response.StatusCode, payload)
+		}
+	}
+
+	deleteWorkspace(extraRoot)
+	if _, err := os.Stat(filepath.Join(extra, "keep-me.txt")); err != nil {
+		t.Fatalf("project files were deleted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extra, "tmp")); !os.IsNotExist(err) {
+		t.Fatalf("workspace tmp still on disk: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "tmp", "threads", extraID+".json")); !os.IsNotExist(err) {
+		t.Fatalf("thread metadata still present: %v", err)
+	}
+
+	deleteWorkspace(defaultRoot)
+	if _, err := os.Stat(dataRoot); err != nil {
+		t.Fatalf("default workspace files were deleted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "tmp", "threads")); err != nil {
+		t.Fatalf("process tmp/threads was deleted: %v", err)
+	}
+
+	afterResponse, err := http.Get(server.URL + "/api/threads")
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	listed.Threads = nil
+	if err := json.NewDecoder(afterResponse.Body).Decode(&listed); err != nil {
+		afterResponse.Body.Close()
+		t.Fatalf("decode after list: %v", err)
+	}
+	afterResponse.Body.Close()
+	for _, thread := range listed.Threads {
+		if thread.ID == "current-workspace" {
+			t.Fatal("hidden default workspace still listed")
+		}
+		if thread.WorkspaceRoot == extraRoot || thread.WorkspaceRoot == defaultRoot {
+			t.Fatalf("deleted workspace still listed: %+v", thread)
+		}
+	}
+}

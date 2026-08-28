@@ -642,11 +642,10 @@
         create.textContent = '新建对话';
         create.addEventListener('click', () => submitThread(workspaceRoot, false));
         menu.append(create);
-        const isDefaultWorkspace = workspaceThreads.some((thread) => thread.id === 'current-workspace');
         const remove = document.createElement('button');
         remove.className = 'danger';
         remove.type = 'button';
-        remove.textContent = isDefaultWorkspace ? '删除全部对话' : '删除项目及磁盘文件';
+        remove.textContent = '删除工作区';
         remove.addEventListener('click', () => removeWorkspace(workspaceRoot));
         menu.append(remove);
         more.addEventListener('click', (event) => {
@@ -657,7 +656,7 @@
           menu.classList.toggle('is-hidden');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
-        actions.append(more, createDeleteButton(isDefaultWorkspace ? '删除全部对话' : '删除工作区', () => removeWorkspace(workspaceRoot)), menu);
+        actions.append(more, createDeleteButton('删除工作区', () => removeWorkspace(workspaceRoot)), menu);
         head.append(name, actions);
         const conversations = document.createElement('div');
         conversations.className = 'workspace-threads';
@@ -1109,25 +1108,7 @@
     }
 
     async function removeWorkspace(workspaceRoot) {
-      const group = threads.filter((thread) => thread.workspace_root === workspaceRoot);
-      const isDefaultWorkspace = group.some((thread) => thread.id === 'current-workspace');
-      if (isDefaultWorkspace) {
-        if (!confirm(`删除工作区“${workspaceRoot}”下的全部对话？\n\n不会删除磁盘上的项目文件。`)) return;
-        try {
-          for (const thread of group) {
-            const response = await fetch(`/api/threads/${encodeURIComponent(thread.id)}`, { method: 'DELETE' });
-            if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-          }
-          threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot || thread.id === 'current-workspace');
-          const current = threads.find((thread) => thread.id === 'current-workspace');
-          if (current) current.title = '';
-          await selectThread('current-workspace');
-        } catch (error) {
-          alert(`删除对话失败：${error.message}`);
-        }
-        return;
-      }
-      if (!confirm(`永久删除工作区“${workspaceRoot}”及其全部对话？\n\n磁盘上的项目文件会被删除，此操作不可恢复。`)) return;
+      if (!confirm(`删除工作区“${workspaceRoot}”下的全部对话？\n\n只删除本应用在 tmp 中保存的会话数据，不会删除项目文件。`)) return;
       try {
         const response = await fetch('/api/workspaces', {
           method: 'DELETE', headers: { 'Content-Type': 'application/json' },
@@ -1136,9 +1117,15 @@
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
         const removedIDs = new Set(threads.filter((thread) => thread.workspace_root === workspaceRoot).map((thread) => thread.id));
         threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot);
-        if (removedIDs.has(activeThreadID)) {
-          activeThreadID = threads[0]?.id || 'current-workspace';
-          await selectThread(activeThreadID);
+        if (removedIDs.has(activeThreadID) || !threads.some((thread) => thread.id === activeThreadID)) {
+          const next = threads[0];
+          if (next) {
+            await selectThread(next.id);
+          } else {
+            activeThreadID = 'current-workspace';
+            renderThreads();
+            showHome();
+          }
         } else {
           renderThreads();
         }

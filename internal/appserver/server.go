@@ -368,6 +368,7 @@ func (h *Handler) chat(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, err.Error(), http.StatusNotFound)
 		return
 	}
+	h.store.unhide(runtime.metadata.ID)
 	sessionIO, err := h.sessionIO(runtime)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusConflict)
@@ -408,7 +409,10 @@ func (h *Handler) listThreads(writer http.ResponseWriter, _ *http.Request) {
 	for index := range stored {
 		stored[index].Title = h.threadTitle(stored[index].ID)
 	}
-	threads := append([]threadMetadata{current}, stored...)
+	threads := stored
+	if current.Title != "" || !h.store.hidden(h.defaultID) {
+		threads = append([]threadMetadata{current}, stored...)
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(writer).Encode(map[string]any{"threads": threads})
 }
@@ -613,48 +617,79 @@ func (h *Handler) removeWorkspace(writer http.ResponseWriter, request *http.Requ
 	h.threadsMu.Lock()
 	var removed []*threadRuntime
 	defaultRoot := h.threads[h.defaultID].metadata.WorkspaceRoot
+	resetDefault := false
 	for threadID, runtime := range h.threads {
-		if threadID != h.defaultID && runtime.metadata.WorkspaceRoot == workspaceRoot {
-			removed = append(removed, runtime)
-			delete(h.threads, threadID)
+		if !sameWorkspace(runtime.metadata.WorkspaceRoot, workspaceRoot) {
+			continue
 		}
+		if threadID == h.defaultID {
+			resetDefault = true
+			continue
+		}
+		removed = append(removed, runtime)
+		delete(h.threads, threadID)
 	}
 	h.threadsMu.Unlock()
-	for _, runtime := range removed {
-		runtime.mu.Lock()
-		sessionIO := runtime.io
-		runtime.io = nil
-		runtime.mu.Unlock()
-		if sessionIO != nil {
-			if err := sessionIO.Shutdown(request.Context()); err != nil {
-				http.Error(writer, err.Error(), http.StatusConflict)
-				return
-			}
-		}
-	}
-	if len(removed) == 0 {
+	if len(removed) == 0 && !resetDefault {
 		http.Error(writer, "workspace is not removable", http.StatusNotFound)
 		return
 	}
-	cleanRoot := filepath.Clean(workspaceRoot)
-	home, _ := os.UserHomeDir()
-	if cleanRoot == string(filepath.Separator) || cleanRoot == filepath.Clean(home) || cleanRoot == filepath.Clean(defaultRoot) {
-		http.Error(writer, "protected workspace cannot be deleted", http.StatusBadRequest)
-		return
-	}
-	if err := os.RemoveAll(cleanRoot); err != nil {
-		h.threadsMu.Lock()
-		for _, runtime := range removed {
-			h.threads[runtime.metadata.ID] = runtime
+	for _, runtime := range removed {
+		if err := shutdownThread(request.Context(), runtime); err != nil {
+			http.Error(writer, err.Error(), http.StatusConflict)
+			return
 		}
+	}
+	if resetDefault {
+		h.threadsMu.Lock()
+		runtime := h.threads[h.defaultID]
 		h.threadsMu.Unlock()
-		http.Error(writer, fmt.Sprintf("delete workspace files: %v", err), http.StatusInternalServerError)
-		return
+		if runtime != nil {
+			if err := shutdownThread(request.Context(), runtime); err != nil {
+				http.Error(writer, err.Error(), http.StatusConflict)
+				return
+			}
+			h.store.remove(h.defaultID)
+			h.store.hide(h.defaultID)
+		}
 	}
 	for _, runtime := range removed {
 		h.store.remove(runtime.metadata.ID)
 	}
+	if canDeleteWorkspaceTmp(workspaceRoot, defaultRoot) {
+		if err := os.RemoveAll(filepath.Join(filepath.Clean(workspaceRoot), "tmp")); err != nil {
+			http.Error(writer, fmt.Sprintf("delete workspace tmp: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func shutdownThread(ctx context.Context, runtime *threadRuntime) error {
+	runtime.mu.Lock()
+	sessionIO := runtime.io
+	runtime.io = nil
+	runtime.session = nil
+	runtime.mu.Unlock()
+	if sessionIO == nil {
+		return nil
+	}
+	return sessionIO.Shutdown(ctx)
+}
+
+func sameWorkspace(left, right string) bool {
+	return filepath.Clean(left) == filepath.Clean(right)
+}
+
+func canDeleteWorkspaceTmp(workspaceRoot, processRoot string) bool {
+	cleanRoot := filepath.Clean(workspaceRoot)
+	if cleanRoot == string(filepath.Separator) {
+		return false
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && cleanRoot == filepath.Clean(home) {
+		return false
+	}
+	return !sameWorkspace(cleanRoot, processRoot)
 }
 
 func (h *Handler) thread(threadID string) (*threadRuntime, error) {
