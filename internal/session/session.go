@@ -133,7 +133,10 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 	submissions := make(chan Submission)
 	events := make(chan protocol.Event, 128)
 	done := make(chan struct{})
-	environment := tools.Environment{WorkingDirectory: workspaceRoot, WorkspaceRoot: workspaceRoot}
+	environment := tools.Environment{
+		WorkingDirectory: workspaceRoot, WorkspaceRoot: workspaceRoot,
+		ExecServer: strings.TrimSpace(os.Getenv("LOB_CODEX_EXEC_SERVER")),
+	}
 	sess := &Session{
 		client: client, events: events, ctx: ctx, cancel: cancel,
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),

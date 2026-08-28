@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/creack/pty"
+	"github.com/lobster-bujiaban/lob-codex/internal/execserver"
 	"github.com/lobster-bujiaban/lob-codex/internal/protocol"
 )
 
@@ -58,6 +58,7 @@ func (buffer *synchronizedBuffer) drain() *headTailBuffer {
 type managedProcess struct {
 	id         int
 	command    *exec.Cmd
+	remote     *remoteProcess
 	stdin      io.WriteCloser
 	terminal   *os.File
 	tty        bool
@@ -72,6 +73,11 @@ type managedProcess struct {
 	deltaMu       sync.Mutex
 	emittedDeltas int
 	exitCode      int
+}
+
+type remoteProcess struct {
+	client    *execserver.Client
+	processID string
 }
 
 type processOutputWriter struct {
@@ -128,16 +134,15 @@ func (manager *ProcessManager) start(
 	}
 	outputDone := make(chan struct{})
 	if tty {
-		terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 120})
-		if err != nil {
-			return "", fmt.Errorf("start PTY command: %w", err)
+		if err := startProcessPTY(command, process, outputDone); err != nil {
+			return "", err
 		}
-		process.stdin = terminal
-		process.terminal = terminal
-		go func() {
-			_, _ = io.Copy(processOutputWriter{process: process, stream: "stdout"}, terminal)
-			close(outputDone)
-		}()
+		if command.Process != nil {
+			if err := finishSandboxStart(command); err != nil {
+				_ = command.Process.Kill()
+				return "", err
+			}
+		}
 	} else {
 		stdin, err := command.StdinPipe()
 		if err != nil {
@@ -148,6 +153,10 @@ func (manager *ProcessManager) start(
 		command.Stderr = processOutputWriter{process: process, stream: "stderr"}
 		if err := command.Start(); err != nil {
 			return "", fmt.Errorf("start command: %w", err)
+		}
+		if err := finishSandboxStart(command); err != nil {
+			_ = command.Process.Kill()
+			return "", err
 		}
 		close(outputDone)
 	}
@@ -174,6 +183,96 @@ func (manager *ProcessManager) start(
 	return encodeExecResult(result)
 }
 
+type RemoteExecRequest struct {
+	Command          string
+	WorkingDirectory string
+	WorkspaceRoot    string
+	CallID           string
+	PolicyRule       string
+	Policy           SandboxPolicy
+	Yield            time.Duration
+	OutputLimit      int
+	Emit             EventEmitter
+}
+
+type remoteStdin struct {
+	client    *execserver.Client
+	processID string
+}
+
+func (stdin remoteStdin) Write(data []byte) (int, error) {
+	if err := stdin.client.Write(context.Background(), stdin.processID, string(data)); err != nil {
+		return 0, err
+	}
+	return len(data), nil
+}
+
+func (remoteStdin) Close() error { return nil }
+
+func (manager *ProcessManager) startRemote(ctx context.Context, baseURL string, request RemoteExecRequest) (string, error) {
+	processID := fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateChunkID())
+	client := &execserver.Client{BaseURL: baseURL}
+	params := execserver.ExecParams{
+		ProcessID: processID,
+		Command:   request.Command,
+		Argv:      NativeShellArgv(request.Command),
+		CWD:       request.WorkingDirectory,
+		Sandbox: &execserver.SandboxIntent{
+			WorkspaceWrite:        request.Policy.WorkspaceWrite,
+			NetworkAccess:         request.Policy.NetworkAccess,
+			CWD:                   request.WorkingDirectory,
+			WorkspaceRoots:        []string{request.WorkspaceRoot},
+			WindowsSandboxLevel:   execserver.WindowsSandboxRestrictedToken,
+			EnforceManagedNetwork: !request.Policy.NetworkAccess,
+		},
+	}
+	if err := client.Start(ctx, params); err != nil {
+		return "", err
+	}
+	process := &managedProcess{
+		remote:     &remoteProcess{client: client, processID: processID},
+		stdin:      remoteStdin{client: client, processID: processID},
+		done:       make(chan struct{}),
+		startedAt:  time.Now(),
+		policyRule: request.PolicyRule + " · remote-exec-server",
+		callID:     request.CallID,
+		emit:       request.Emit,
+	}
+	manager.mu.Lock()
+	process.id = manager.nextID
+	manager.nextID++
+	manager.processes[process.id] = process
+	manager.mu.Unlock()
+	go manager.pollRemote(process)
+	finished := waitForProcess(process.done, request.Yield)
+	result := process.result(request.OutputLimit, !finished)
+	if finished {
+		manager.remove(process.id)
+	}
+	return encodeExecResult(result)
+}
+
+func (manager *ProcessManager) pollRemote(process *managedProcess) {
+	defer close(process.done)
+	for {
+		polled, err := process.remote.client.Poll(context.Background(), process.remote.processID, 250*time.Millisecond)
+		if err != nil {
+			process.exitCode = -1
+			_, _ = process.output.Write([]byte(err.Error()))
+			return
+		}
+		if polled.Output != "" {
+			_, _ = processOutputWriter{process: process, stream: "stdout"}.Write([]byte(polled.Output))
+		}
+		if !polled.Running {
+			if polled.ExitCode != nil {
+				process.exitCode = *polled.ExitCode
+			}
+			return
+		}
+	}
+}
+
 func (manager *ProcessManager) writeStdin(
 	ctx context.Context,
 	sessionID int,
@@ -196,6 +295,10 @@ func (manager *ProcessManager) writeStdin(
 			if process.tty {
 				if _, err := process.stdin.Write([]byte{3}); err != nil {
 					return "", fmt.Errorf("interrupt PTY process %d: %w", sessionID, err)
+				}
+			} else if process.remote != nil {
+				if err := process.remote.client.Kill(ctx, process.remote.processID); err != nil {
+					return "", fmt.Errorf("interrupt remote process %d: %w", sessionID, err)
 				}
 			} else if err := process.command.Process.Signal(os.Interrupt); err != nil {
 				return "", fmt.Errorf("interrupt process %d: %w", sessionID, err)
@@ -291,7 +394,13 @@ func (manager *ProcessManager) Close() {
 	manager.processes = make(map[int]*managedProcess)
 	manager.mu.Unlock()
 	for _, process := range processes {
-		_ = process.command.Process.Kill()
+		if process.remote != nil {
+			_ = process.remote.client.Kill(context.Background(), process.remote.processID)
+			continue
+		}
+		if process.command != nil && process.command.Process != nil {
+			_ = process.command.Process.Kill()
+		}
 		if process.terminal != nil {
 			_ = process.terminal.Close()
 		}

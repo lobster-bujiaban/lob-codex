@@ -118,16 +118,28 @@ func (executor ExecCommandExecutor) Execute(ctx context.Context, invocation Invo
 		outputLimit = min(arguments.MaxOutputTokens*4, maxOutputBytes)
 	}
 
-	backend := localSandboxBackend()
-	command, err := backend.Command(ctx, SandboxPolicy{
+	policy := SandboxPolicy{
 		WorkspaceRoot: invocation.Environment.WorkspaceRoot, WorkingDirectory: workingDirectory,
 		WorkspaceWrite: approved, NetworkAccess: arguments.NetworkAccess && approved,
-	}, arguments.Command)
+	}
+	if invocation.Environment.ExecServer != "" {
+		if arguments.TTY {
+			return "", errors.New("PTY unified exec is unavailable on remote exec-server; ConPTY is not implemented")
+		}
+		return executor.Manager.startRemote(ctx, invocation.Environment.ExecServer, RemoteExecRequest{
+			Command: arguments.Command, WorkingDirectory: workingDirectory,
+			WorkspaceRoot: invocation.Environment.WorkspaceRoot, Policy: policy,
+			CallID: invocation.Call.CallID, Yield: yield, OutputLimit: outputLimit,
+			PolicyRule: policyRule, Emit: invocation.Emit,
+		})
+	}
+
+	command, backendName, err := SandboxedCommand(ctx, policy, arguments.Command)
 	if err != nil {
 		return "", err
 	}
 	return executor.Manager.start(
-		command, invocation.Call.CallID, arguments.TTY, yield, outputLimit, policyRule+" · "+backend.Name(), invocation.Emit,
+		command, invocation.Call.CallID, arguments.TTY, yield, outputLimit, policyRule+" · "+backendName, invocation.Emit,
 	)
 }
 

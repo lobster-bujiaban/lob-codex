@@ -13,8 +13,10 @@ import (
 
 	"github.com/lobster-bujiaban/lob-codex/internal/appserver"
 	"github.com/lobster-bujiaban/lob-codex/internal/config"
+	"github.com/lobster-bujiaban/lob-codex/internal/execserver"
 	"github.com/lobster-bujiaban/lob-codex/internal/model"
 	"github.com/lobster-bujiaban/lob-codex/internal/session"
+	"github.com/lobster-bujiaban/lob-codex/internal/tools"
 )
 
 const usage = `LOB Codex - a coding agent harness built step by step in Go
@@ -23,6 +25,7 @@ Usage:
   lob-codex
   lob-codex <prompt>
   lob-codex serve [-addr 127.0.0.1:53878]
+  lob-codex exec-server [-addr 127.0.0.1:53879]
 
 Example:
   lob-codex "explain this repository"
@@ -39,6 +42,14 @@ func main() {
 
 	if len(os.Args) > 1 && os.Args[1] == "serve" {
 		if err := serve(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "lob-codex: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "exec-server" {
+		if err := serveExecServer(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "lob-codex: %v\n", err)
 			os.Exit(1)
 		}
@@ -121,5 +132,23 @@ func serve(args []string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	fmt.Printf("LOB Codex GUI: http://%s\n", listener.Addr())
+	return server.Serve(listener)
+}
+
+func serveExecServer(args []string) error {
+	flags := flag.NewFlagSet("exec-server", flag.ContinueOnError)
+	address := flags.String("addr", "127.0.0.1:53879", "HTTP listen address")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", *address)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", *address, err)
+	}
+	defer listener.Close()
+	handler := execserver.NewHandler(tools.CommandFromExecParams)
+	handler.AfterStart = tools.FinishSandboxStart
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	fmt.Printf("LOB Codex exec-server: http://%s\n", listener.Addr())
 	return server.Serve(listener)
 }

@@ -19,7 +19,7 @@
 | Session/Turn | `codex-rs/core/src/session`、`codex-rs/history`、`codex-rs/core/src/session/rollout_reconstruction.rs` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 SessionMeta、TurnContext、EventMsg、ResponseItem JSONL rollout 与恢复主链 |
 | 模型客户端 | `codex-rs/core` 模型客户端、`codex-rs/codex-api/src/sse/responses.rs` | `internal/model` | 部分对齐 | Responses API 接收 `ResponseItem[]`，消费文本 Delta、OutputItemDone、Completed usage/response_id；支持建连/429/5xx 有界重试、Reasoning Item 与并行工具调用 |
 | 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
-| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs` | `internal/tools` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin 与后台终端清理 |
+| 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs`、`codex-rs/windows-sandbox-rs`、`codex-rs/exec-server` | `internal/tools`、`internal/execserver` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、Windows RestrictedToken（legacy）、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin、后台终端清理；远程 exec-server 发送明文 argv + portable sandbox intent，由对端本机套沙箱 |
 | MCP/Skills/插件 | `codex-rs/core/src/session/mcp.rs`、`codex-rs/core-skills`、`codex-rs/core-plugins` | `internal/mcp`、`internal/extensions` | 部分对齐 | 已实现 stdio/HTTP MCP、启动超时与有界重试、stdio/SSE 上的 tools/list_changed 与 elicitation schema 表单、文件型 OAuth token 与 GUI 登录、扩展状态面板、插件启停/本地 marketplace 安装卸载，以及 plugin 贡献的 hooks/apps/commands/agents；Codex keyring OAuth、远程 marketplace 与完整 hooks 引擎尚未对齐 |
 | App Server | `codex-rs/app-server`、`app-server-protocol/v2` | `internal/appserver` | 部分对齐 | 已实现 GUI API 与 v2 兼容 REST 面：thread start/list/read、turn start/steer/interrupt、独立 Session、canonical Turn 状态和 rollout ordinal 事件恢复 |
 
@@ -87,7 +87,7 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 | 1 | ToolInvocation 携带 Call、StepContext 与 TurnEnvironment | Invocation 携带 Call、WorkingDirectory 与 WorkspaceRoot |
 | 2 | Handler 解析 cmd/workdir/timeout 等参数 | ExecCommandExecutor 使用同名参数子集 |
 | 3 | ExecPolicy 决定允许、拒绝或申请审批 | 当前只读 allowlist 自动允许，其余返回“requires approval”模型结果 |
-| 4 | UnifiedExecRuntime 编排审批、Sandbox 与 ProcessManager | 当前直接进入 macOS Seatbelt，只读工作区且禁止写入和网络 |
+| 4 | UnifiedExecRuntime 编排审批、Sandbox 与 ProcessManager | 本地进入本机 SandboxBackend（Seatbelt / bwrap / RestrictedToken）；远程发送明文 argv + intent |
 | 5 | ExecCommandToolOutput 截断后转 FunctionCallOutput | 返回 exit_code、wall_time_seconds、output 与截断标记 |
 
 GUI 启动环境可能没有交互式 Shell 的 PATH。执行器会保留进程 PATH，并补充 Homebrew、`/usr/local`
@@ -238,12 +238,13 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - `ResponseItem` 当前实现文本与 base64 `input_image` Message、Reasoning、FunctionCall 和 FunctionCallOutput；远程/本地图片预处理及音频内容尚未补齐。
 - Conversation History 已实现调用/输出配对标准化、上下文估算、90% 阈值自动压缩及 replacement history 恢复；Codex 的完整媒体标准化和精确 token usage 尚未实现。
 - 同一模型响应中的多个工具调用并发执行，结果按模型原始调用顺序写回 History；尚未实现 Codex 的工具并发资格分类与单工具串行约束。
-- PTY 当前使用固定 24×120 尺寸；Codex unified exec 同样未暴露 resize 工具参数，远程执行器和尚未具备原生受限令牌后端的 Windows 平台仍未实现。
+- PTY 当前使用固定 24×120 尺寸；Codex unified exec 同样未暴露 resize 工具参数。Windows 上 `tty: true` 明确失败（ConPTY / 私有桌面未实现）。
 - 已实现 chunk_id、输出 Delta、TerminalInteraction、1 MiB head-tail buffer、Delta 数量/大小上限和省略字节统计。
 - 审批支持 approved、approved_for_session、approved_with_amendment 与 denied；持久化规则首版采用项目 `tmp/` JSON 文件，尚未实现 Codex 正式规则语法。
 - Prefix rule 第一版只缓存简单单命令；复合 shell 中所有子命令均为内置只读命令时自动允许，否则只允许批准一次。
 - Seatbelt 不支持在 Codex 自身 Seatbelt 环境中嵌套启动；嵌套失败会作为普通工具输出回给模型。
-- SandboxBackend 已统一 read-only/workspace-write/network policy：macOS Seatbelt 与 Linux bubblewrap 均默认禁网，网络请求必须单次审批；workspace-write 继续保护 `.git` 与 `.codex`。其他平台在缺少后端时明确失败，不会静默无沙箱执行。
+- SandboxBackend 已统一 read-only/workspace-write/network policy：macOS Seatbelt、Linux bubblewrap 与 Windows RestrictedToken 均默认禁网意图（`CODEX_SANDBOX_NETWORK_DISABLED`）；网络请求必须单次审批；workspace-write 继续保护 `.git` 与 `.codex`。Windows Elevated command-runner、named-pipe IPC、deny-read 与强制代理尚未实现，这些路径保持失败语义。
+- 远程执行对照 `env_for_exec_server`：`LOB_CODEX_EXEC_SERVER` 指向 JSON-RPC HTTP exec-server 时发送明文 argv + sandbox intent，对端调用本机 SandboxBackend。尚未实现 Codex 完整 WebSocket/relay、能力发现与 Noise 传输。
 - Rollout 已按 Codex 顶层类型持久化 `session_meta`、`turn_context`、`event_msg`、`response_item` 与 `compacted`，高频文本/终端 Delta 不落盘；hooks、精确 token 状态和启动预热尚未实现。
 - 历史页面由 canonical ResponseItem 重建消息与工具卡片；尚未恢复 Codex 完整 Turn 状态、审批卡片和终端增量事件。
 - Fork 已支持历史前缀与 workspace 继承，尚未持久化 Codex 的 `forked_from_id` 和 ordinal lineage 元数据。
@@ -257,4 +258,4 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 
 ## 下一步
 
-继续补齐 App Server 原生 JSON-RPC transport、通知订阅能力和分页 Thread Store；随后实现远程执行器与 Windows 沙箱。
+继续补齐 App Server 原生 JSON-RPC transport、通知订阅能力和分页 Thread Store；随后实现 Windows Elevated command-runner 与完整 exec-server WebSocket/能力发现。

@@ -30,6 +30,8 @@ type Call struct {
 type Environment struct {
 	WorkingDirectory string
 	WorkspaceRoot    string
+	// ExecServer is a remote exec-server base URL. Empty means local sandbox.
+	ExecServer string
 }
 
 // ApprovalDecision is the subset of Codex review decisions implemented now.

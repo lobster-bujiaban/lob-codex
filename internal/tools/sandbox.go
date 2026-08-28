@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 type SandboxPolicy struct {
@@ -28,8 +29,39 @@ func localSandboxBackend() SandboxBackend {
 		return seatbeltBackend{}
 	case "linux":
 		return bubblewrapBackend{}
+	case "windows":
+		return windowsRestrictedTokenBackend{}
 	default:
 		return unsupportedSandboxBackend{platform: runtime.GOOS}
+	}
+}
+
+// SandboxedCommand wraps a shell command with the host OS sandbox.
+func SandboxedCommand(ctx context.Context, policy SandboxPolicy, command string) (*exec.Cmd, string, error) {
+	backend := localSandboxBackend()
+	cmd, err := backend.Command(ctx, policy, command)
+	if err != nil {
+		return nil, backend.Name(), err
+	}
+	return cmd, backend.Name(), nil
+}
+
+// NativeShellArgv is the unwrapped command sent to a remote exec-server.
+func NativeShellArgv(command string) []string {
+	if runtime.GOOS == "windows" {
+		return []string{"cmd.exe", "/C", command}
+	}
+	return []string{"/bin/sh", "-c", command}
+}
+
+func shellCommandFromArgv(argv []string) string {
+	switch {
+	case len(argv) >= 3 && (argv[0] == "/bin/sh" || argv[0] == "/bin/zsh" || strings.EqualFold(filepath.Base(argv[0]), "cmd.exe")) && (argv[1] == "-c" || strings.EqualFold(argv[1], "/C")):
+		return argv[2]
+	case len(argv) == 0:
+		return ""
+	default:
+		return strings.Join(argv, " ")
 	}
 }
 
@@ -111,4 +143,9 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+// FinishSandboxStart attaches host-specific job/token cleanup after spawn.
+func FinishSandboxStart(cmd *exec.Cmd) error {
+	return finishSandboxStart(cmd)
 }

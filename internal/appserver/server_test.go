@@ -243,8 +243,8 @@ func TestThreadWorkspacePersistsAndRoutesExec(t *testing.T) {
 	if removeResponse.StatusCode != http.StatusNoContent {
 		t.Fatalf("remove workspace status = %d, want %d", removeResponse.StatusCode, http.StatusNoContent)
 	}
-	if _, err := os.Stat(canonicalWorkspace); !os.IsNotExist(err) {
-		t.Fatalf("workspace still exists after removal: %v", err)
+	if _, err := os.Stat(filepath.Join(canonicalWorkspace, "workspace-marker.txt")); err != nil {
+		t.Fatalf("project files were deleted: %v", err)
 	}
 }
 
