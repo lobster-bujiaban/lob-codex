@@ -106,6 +106,7 @@ func NewDefaultRouter(environment Environment) *Router {
 		EchoExecutor{},
 		ExecCommandExecutor{Manager: router.processes, Policy: router.policy},
 		WriteStdinExecutor{Manager: router.processes},
+		ApplyPatchExecutor{Policy: router.policy},
 	} {
 		if err := router.Register(executor); err != nil {
 			panic(err)

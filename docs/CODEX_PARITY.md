@@ -18,7 +18,7 @@
 | 协议事件 | `codex-rs/protocol` | `internal/protocol` | 部分对齐 | 已拆分 `ResponseEvent` 与公开 `Event/EventMsg`，并实现文本、剪贴板图片 Message 与工具调用 ResponseItem 子集 |
 | Session/Turn | `codex-rs/core/src/session`、`codex-rs/history`、`codex-rs/core/src/session/rollout_reconstruction.rs` | `internal/session` | 部分对齐 | 已还原 Submission、后台 loop、RegularTask、Turn/StepContext，以及 SessionMeta、TurnContext、EventMsg、ResponseItem JSONL rollout 与恢复主链 |
 | 模型客户端 | `codex-rs/core` 模型客户端、`codex-rs/codex-api/src/sse/responses.rs` | `internal/model` | 部分对齐 | Responses API 接收 `ResponseItem[]`，消费文本 Delta、OutputItemDone、Completed usage/response_id；支持建连/429/5xx 有界重试、Reasoning Item 与并行工具调用 |
-| 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo 与 exec_command 路由 |
+| 工具路由 | `codex-rs/core/src/tools` | `internal/tools` | 部分对齐 | 已实现 Tool Definition、Registry/Router、ToolInvocation、echo、exec_command 与 apply_patch 路由 |
 | 命令执行 | `codex-rs/core/src/tools/handlers/unified_exec`、`codex-rs/core/src/tools/sandboxing.rs`、`codex-rs/windows-sandbox-rs`、`codex-rs/exec-server` | `internal/tools`、`internal/execserver` | 部分对齐 | 已实现 TurnEnvironment、审批、SandboxBackend、macOS Seatbelt、Linux bubblewrap、Windows RestrictedToken（legacy）+ ConPTY、ProcessManager、pipe/PTY、session_id、chunk_id、输出 Delta、TerminalInteraction、write_stdin、后台终端清理；远程 exec-server 发送明文 argv + portable sandbox intent，由对端本机套沙箱 |
 | MCP/Skills/插件 | `codex-rs/core/src/session/mcp.rs`、`codex-rs/core-skills`、`codex-rs/core-plugins` | `internal/mcp`、`internal/extensions` | 部分对齐 | 已实现 stdio/HTTP MCP、启动超时与有界重试、stdio/SSE 上的 tools/list_changed 与 elicitation schema 表单、文件型 OAuth token 与 GUI 登录、扩展状态面板、插件启停/本地 marketplace 安装卸载，以及 plugin 贡献的 hooks/apps/commands/agents；Codex keyring OAuth、远程 marketplace 与完整 hooks 引擎尚未对齐 |
 | App Server | `codex-rs/app-server`、`app-server-protocol/v2` | `internal/appserver` | 部分对齐 | 已实现 GUI API 与 v2 兼容 REST 面：thread start/list/read、turn start/steer/interrupt、独立 Session、canonical Turn 状态和 rollout ordinal 事件恢复 |
@@ -254,7 +254,7 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - MCP 支持 stdio JSON-RPC 与 Streamable HTTP（POST JSON/SSE + GET 会话流）、启动超时、连接有界重试、`tools/list_changed` 刷新、elicitation schema 表单，以及 RFC 9728/7591 文件型 OAuth；尚未实现 Codex RMCP keyring、executor 路由 OAuth 与完整 OpenAI form elicitation。
 - App Server v2 兼容层提供 `/api/v2/threads`、`thread read(includeTurns)`、turn start/steer/interrupt 与 `/events?after=<ordinal>`；实时 NDJSON 使用 Codex v2 notification method 命名。原生 JSON-RPC initialize/initialized 握手、WebSocket/stdio transport、通知 opt-out 和分页 thread list 尚未实现。
 - 断线恢复只重放 rollout 中的 durable SessionMeta/TurnContext/EventMsg/ResponseItem/Compacted；文本与终端 Delta 按 Codex 的 ephemeral 边界不伪造重放，客户端从 canonical item/turn 状态恢复后继续接收新通知。
-- 协议目前只覆盖这条最小调用链所需事件，字段也未覆盖全部 Codex 元数据。
+- `apply_patch` 已按 Codex 语法解析 Add/Delete/Update/Move，并用 seek_sequence 四级匹配（exact / rstrip / trim / Unicode 标点）写回工作区，摘要为 `Success. Updated the following files:`。路径不得逃出 workspace，且保护 `.git` 与 `.codex`。Responses 面用 function `input`，尚未实现 Codex freeform custom tool、streaming `PatchApplyUpdated` 与 PreserveLineEndings。
 
 ## 产品口径与优先级
 
@@ -265,7 +265,7 @@ LOB Codex 的目标是：**日常编码核心不弱于原生 Codex，macOS 与 W
 | 优先级 | 缺口 | 为什么算核心 / 为什么可以不做 |
 |---|---|---|
 | P0 | Windows `tty: true`（ConPTY） | **已完成**：RestrictedToken 路径下 ConPTY + Job Object + TTY 输入归一化。Elevated / 私有桌面仍不做 |
-| P0 | `apply_patch` | 原生改文件走专用补丁工具；当前只能靠 shell 写文件，编码质量更差 |
+| P0 | `apply_patch` | **已完成**：Codex 补丁语法、seek_sequence 四级匹配、工作区写保护与审批；Responses 面用 function `input`，未接 freeform custom tool / streaming PatchApplyUpdated |
 | P1 | Windows 原生工作区选择器 | Mac 有 Finder；Windows 只能手输路径，流畅度不够 |
 | P1 | Windows 可执行搜索路径 | 当前 PATH 只补 Homebrew / Codex.app，Windows 侧 `rg`/`git` 更易找不到 |
 | 不做（现阶段） | App Server 原生 JSON-RPC / VS Code 握手 / 分页 Thread Store | 服务的是官方 IDE 协议，不是本机 GUI 日常路径 |
@@ -273,4 +273,4 @@ LOB Codex 的目标是：**日常编码核心不弱于原生 Codex，macOS 与 W
 
 ## 下一步
 
-先实现 `apply_patch`。随后补 Windows 文件夹选择器和可执行 PATH。原生 JSON-RPC、Elevated runner 与完整远程 exec-server 暂缓。
+先补 Windows 文件夹选择器和可执行 PATH。原生 JSON-RPC、Elevated runner 与完整远程 exec-server 暂缓。
