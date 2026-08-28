@@ -67,3 +67,22 @@ func TestOpenAIClientStreamsTextDeltas(t *testing.T) {
 		}
 	}
 }
+
+func TestReasoningInputAlwaysIncludesSummary(t *testing.T) {
+	encoded, err := json.Marshal([]protocol.ResponseItem{{
+		Type:             "reasoning",
+		ID:               "reasoning-1",
+		EncryptedContent: "encrypted",
+	}})
+	if err != nil {
+		t.Fatalf("Marshal reasoning input: %v", err)
+	}
+	var input []map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &input); err != nil {
+		t.Fatalf("Unmarshal reasoning input: %v", err)
+	}
+	summary, exists := input[0]["summary"]
+	if !exists || string(summary) != "[]" {
+		t.Fatalf("reasoning summary = %s, exists = %v; want []", summary, exists)
+	}
+}

@@ -3,7 +3,10 @@
     "example-mcp": {
       "command": "go",
       "args": ["run", "./examples/mcp-server"],
-      "startup_timeout_ms": 10000
+      "env": {
+        "GOCACHE": "/tmp/lob-codex-example-go-cache"
+      },
+      "startup_timeout_ms": 30000
     }
   }
 }

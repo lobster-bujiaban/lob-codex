@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 // ResponseItem is the model-visible conversation item shared by session history
 // and the Responses API. This stage implements Codex's message subset; later
 // stages add reasoning and tool-call variants without changing history ownership.
@@ -14,6 +16,24 @@ type ResponseItem struct {
 	Output           string        `json:"output,omitempty"`
 	Summary          []ContentItem `json:"summary,omitempty"`
 	EncryptedContent string        `json:"encrypted_content,omitempty"`
+}
+
+// MarshalJSON keeps the Responses API's required empty summary array on
+// reasoning items. omitempty is correct for every other item type, but an
+// upstream reasoning item may legitimately arrive without summary entries.
+func (item ResponseItem) MarshalJSON() ([]byte, error) {
+	type responseItemAlias ResponseItem
+	if item.Type != "reasoning" {
+		return json.Marshal(responseItemAlias(item))
+	}
+	summary := item.Summary
+	if summary == nil {
+		summary = []ContentItem{}
+	}
+	return json.Marshal(struct {
+		responseItemAlias
+		Summary []ContentItem `json:"summary"`
+	}{responseItemAlias: responseItemAlias(item), Summary: summary})
 }
 
 // NewFunctionCallOutput creates the model-visible result paired with one call.

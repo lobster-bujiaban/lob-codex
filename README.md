@@ -89,7 +89,8 @@ go run ./cmd/lob-codex
 仓库内置 `plugins/example-extension`，覆盖 Skill、MCP Server、Hook、App、Command 和 Agent；
 `.agents/plugins/marketplace.json` 还提供一个可安装、卸载的本地 Marketplace 插件。启动 GUI 后，
 打开“Skills、插件与 MCP”并点击“重新扫描并连接”即可看到各类型示例。MCP 示例暴露只读的
-`example_echo` 工具；Skill 可在消息中通过 `$example-extension:hello` 显式触发。
+`example_echo` 工具；Skill 可在消息中通过 `$example-extension:hello` 显式触发。示例 MCP 将
+Go 编译缓存放在 `/tmp/lob-codex-example-go-cache`，以兼容 GUI 的受限启动环境。
 
 当前最小 GUI 包含：多轮消息输入、Conversation History、流式回复、`echo` Tool Loop、
 `exec_command`、批准一次/拒绝、工具生命周期展示和错误展示。命令执行当前仅支持 macOS
