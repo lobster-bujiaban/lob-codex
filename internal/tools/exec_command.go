@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -161,12 +162,7 @@ func resolveWorkingDirectory(environment Environment, requested string) (string,
 
 func execSearchPath() string {
 	directories := filepath.SplitList(os.Getenv("PATH"))
-	candidates := []string{
-		"/opt/homebrew/bin",
-		"/usr/local/bin",
-		"/Applications/Codex.app/Contents/Resources",
-		"/Applications/ChatGPT.app/Contents/Resources",
-	}
+	candidates := extraExecSearchDirectories()
 	if executable, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Dir(executable))
 	}
@@ -176,4 +172,35 @@ func execSearchPath() string {
 		}
 	}
 	return strings.Join(directories, string(os.PathListSeparator))
+}
+
+func extraExecSearchDirectories() []string {
+	if runtime.GOOS == "windows" {
+		home, _ := os.UserHomeDir()
+		programFiles := os.Getenv("ProgramFiles")
+		programFilesX86 := os.Getenv("ProgramFiles(x86)")
+		localAppData := os.Getenv("LocalAppData")
+		programData := os.Getenv("ProgramData")
+		return []string{
+			filepath.Join(programFiles, "Git", "cmd"),
+			filepath.Join(programFiles, "Git", "usr", "bin"),
+			filepath.Join(programFiles, "Git", "mingw64", "bin"),
+			filepath.Join(programFilesX86, "Git", "cmd"),
+			filepath.Join(programFilesX86, "Git", "usr", "bin"),
+			filepath.Join(localAppData, "Programs", "Git", "cmd"),
+			filepath.Join(localAppData, "Microsoft", "WinGet", "Links"),
+			filepath.Join(programData, "chocolatey", "bin"),
+			filepath.Join(home, "scoop", "shims"),
+			filepath.Join(home, ".cargo", "bin"),
+			filepath.Join(programFiles, "ripgrep"),
+			filepath.Join(programFiles, "Go", "bin"),
+			filepath.Join(programFiles, "nodejs"),
+		}
+	}
+	return []string{
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+		"/Applications/Codex.app/Contents/Resources",
+		"/Applications/ChatGPT.app/Contents/Resources",
+	}
 }

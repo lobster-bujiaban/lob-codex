@@ -90,9 +90,10 @@ Codex Core 不提供本地 `read_file` / `list_files` 独立工具；本地文�
 | 4 | UnifiedExecRuntime 编排审批、Sandbox 与 ProcessManager | 本地进入本机 SandboxBackend（Seatbelt / bwrap / RestrictedToken）；远程发送明文 argv + intent |
 | 5 | ExecCommandToolOutput 截断后转 FunctionCallOutput | 返回 exit_code、wall_time_seconds、output 与截断标记 |
 
-GUI 启动环境可能没有交互式 Shell 的 PATH。执行器会保留进程 PATH，并补充 Homebrew、`/usr/local`
-及 Codex/ChatGPT bundled resources；对应目录只开放 Seatbelt 读取权限，使 `rg` 等 bundled tool 的
-行为与原生 Codex 桌面端一致。
+GUI 启动环境可能没有交互式 Shell 的 PATH。执行器会保留进程 PATH；macOS 补充 Homebrew、
+`/usr/local` 及 Codex/ChatGPT bundled resources，Windows 补充 Git、WinGet、scoop、Chocolatey、
+cargo 等常见工具目录。对应目录只开放 Seatbelt 读取权限，使 `rg` 等 bundled tool 的行为与原生
+Codex 桌面端一致。
 
 ## Exec Approval 暂停与恢复
 
@@ -192,8 +193,8 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 | 9 | App Server 管理项目与 thread 生命周期 | 侧栏按 Codex 项目/对话层级交互，首条用户消息生成标题，支持当前项目新对话及受保护的磁盘目录删除 |
 
 浏览器无法通过普通目录上传控件获得本机绝对路径，因此本地 App Server 在 macOS 使用系统
-文件夹选择器取得路径，再复用相同的 workspace 校验与 `thread/start` 主链；其他平台当前保留
-明确的“不支持原生选择器”错误，仍可手动输入绝对路径。
+文件夹选择器、在 Windows 使用 FolderBrowserDialog 取得路径，再复用相同的 workspace 校验与
+`thread/start` 主链；其他平台仍可手动输入绝对路径。
 
 工作区删除属于 LOB Codex 本地管理扩展：删除已登记工作区时先关闭其全部 Session，再删除
 该工作区在 `tmp/threads` 中的会话记录并从侧栏移除；若该目录不是当前进程工作区，再删除
@@ -266,11 +267,11 @@ LOB Codex 的目标是：**日常编码核心不弱于原生 Codex，macOS 与 W
 |---|---|---|
 | P0 | Windows `tty: true`（ConPTY） | **已完成**：RestrictedToken 路径下 ConPTY + Job Object + TTY 输入归一化。Elevated / 私有桌面仍不做 |
 | P0 | `apply_patch` | **已完成**：Codex 补丁语法、seek_sequence 四级匹配、工作区写保护与审批；Responses 面用 function `input`，未接 freeform custom tool / streaming PatchApplyUpdated |
-| P1 | Windows 原生工作区选择器 | Mac 有 Finder；Windows 只能手输路径，流畅度不够 |
-| P1 | Windows 可执行搜索路径 | 当前 PATH 只补 Homebrew / Codex.app，Windows 侧 `rg`/`git` 更易找不到 |
+| P1 | Windows 原生工作区选择器 | **已完成**：FolderBrowserDialog 选文件夹后走同一套 workspace 校验 |
+| P1 | Windows 可执行搜索路径 | **已完成**：补 Git/WinGet/scoop/Chocolatey/cargo 等常见工具目录 |
 | 不做（现阶段） | App Server 原生 JSON-RPC / VS Code 握手 / 分页 Thread Store | 服务的是官方 IDE 协议，不是本机 GUI 日常路径 |
 | 不做（现阶段） | Elevated command-runner、exec-server WebSocket/Noise、远程 marketplace、keyring OAuth、完整 hooks、TUI、子 Agent | Codex 完整度，不是「两边都能流畅写代码」的必要条件 |
 
 ## 下一步
 
-先补 Windows 文件夹选择器和可执行 PATH。原生 JSON-RPC、Elevated runner 与完整远程 exec-server 暂缓。
+日常编码核心的 Mac/Windows 流畅度缺口已补齐。后续按使用中出现的问题再排，不主动扩 Codex 完整协议面。

@@ -90,3 +90,20 @@ func TestNativeShellArgvIsUnwrapped(t *testing.T) {
 		t.Fatalf("native argv wrapped: %q", argv)
 	}
 }
+
+func TestExtraExecSearchDirectories(t *testing.T) {
+	directories := extraExecSearchDirectories()
+	if len(directories) == 0 {
+		t.Fatal("extra exec search directories is empty")
+	}
+	joined := strings.Join(directories, "\n")
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(joined, "Git") || !strings.Contains(joined, "scoop") {
+			t.Fatalf("windows extras = %q", directories)
+		}
+		return
+	}
+	if !strings.Contains(joined, "/usr/local/bin") {
+		t.Fatalf("unix extras = %q", directories)
+	}
+}
