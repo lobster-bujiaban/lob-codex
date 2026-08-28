@@ -1095,10 +1095,15 @@
         const workspaceRoot = thread?.workspace_root;
         threads = threads.filter((item) => item.id !== threadID);
         if (activeThreadID === threadID) {
-          activeThreadID = threads.find((item) => item.workspace_root === workspaceRoot)?.id
-            || threads[0]?.id
-            || 'current-workspace';
-          await selectThread(activeThreadID);
+          const sameWorkspace = threads.find((item) => item.workspace_root === workspaceRoot);
+          if (sameWorkspace) {
+            await selectThread(sameWorkspace.id);
+          } else if (workspaceRoot) {
+            await submitThread(workspaceRoot, false);
+          } else {
+            activeThreadID = threads[0]?.id || 'current-workspace';
+            await selectThread(activeThreadID);
+          }
         } else {
           renderThreads();
         }
@@ -1768,6 +1773,10 @@
     document.querySelector('#extensions-button').addEventListener('click', showExtensions);
     document.querySelector('#extensions-close').addEventListener('click', () => extensionsDialog.close());
     document.querySelector('#extensions-refresh').addEventListener('click', async () => {
+      if (activeRequest) {
+        extensionsContent.textContent = '当前任务仍在运行，暂时不能重载扩展。请关闭此窗口，点击输入框右侧的停止按钮；任务结束后再打开扩展并刷新。';
+        return;
+      }
       extensionsContent.textContent = '正在重新扫描并连接…';
       try {
         const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/extensions/refresh`, { method: 'POST' });
