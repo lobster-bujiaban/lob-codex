@@ -19,14 +19,15 @@ type Skill struct {
 }
 
 type MCPServer struct {
-	Name           string
-	Command        string
-	Args           []string
-	Env            map[string]string
-	URL            string
-	Headers        map[string]string
-	StartupTimeout time.Duration
-	SourcePath     string
+	Name             string
+	Command          string
+	Args             []string
+	Env              map[string]string
+	URL              string
+	Headers          map[string]string
+	StartupTimeout   time.Duration
+	SourcePath       string
+	WorkingDirectory string
 }
 
 type Hook struct {
@@ -96,6 +97,9 @@ func Load(workspace string) (Catalog, error) {
 	if err := loadMCPFile(filepath.Join(workspace, ".mcp.json"), &catalog); err != nil {
 		return catalog, err
 	}
+	for index := range catalog.MCPServers {
+		catalog.MCPServers[index].WorkingDirectory = workspace
+	}
 	pluginRoots := []string{filepath.Join(workspace, "plugins"), filepath.Join(workspace, ".agents", "plugins")}
 	for _, root := range pluginRoots {
 		matches, _ := filepath.Glob(filepath.Join(root, "*", ".codex-plugin", "plugin.json"))
@@ -129,12 +133,16 @@ func loadPlugin(manifestPath, workspace string, disabled map[string]bool, catalo
 			_ = loadSkills(resolvePluginPath(pluginRoot, manifest.Skills), manifest.Name, catalog)
 		}
 		mcpPath := filepath.Join(pluginRoot, ".mcp.json")
+		mcpStart := len(catalog.MCPServers)
 		if len(manifest.MCPServers) > 0 {
 			if err := loadManifestMCP(pluginRoot, manifest.MCPServers, catalog); err != nil {
 				return err
 			}
 		} else if err := loadMCPFile(mcpPath, catalog); err != nil {
 			return err
+		}
+		for index := mcpStart; index < len(catalog.MCPServers); index++ {
+			catalog.MCPServers[index].WorkingDirectory = pluginRoot
 		}
 		plugin.Hooks = loadHooks(pluginRoot, manifest.Hooks)
 		plugin.Apps = loadApps(pluginRoot, manifest.Apps)

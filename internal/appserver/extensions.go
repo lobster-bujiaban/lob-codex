@@ -12,12 +12,12 @@ import (
 )
 
 func (h *Handler) listMarketplace(writer http.ResponseWriter, request *http.Request) {
-	runtime, err := h.thread(request.PathValue("threadID"))
+	_, err := h.thread(request.PathValue("threadID"))
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusNotFound)
 		return
 	}
-	marketplaces, err := extensions.LoadMarketplaces(runtime.metadata.WorkspaceRoot)
+	marketplaces, err := extensions.LoadMarketplaces(h.extensionRoot)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -43,7 +43,7 @@ func (h *Handler) installPlugin(writer http.ResponseWriter, request *http.Reques
 	}
 	source := strings.TrimSpace(input.Path)
 	if source == "" && input.MarketplacePath != "" && input.PluginName != "" {
-		marketplaces, err := extensions.LoadMarketplaces(runtime.metadata.WorkspaceRoot)
+		marketplaces, err := extensions.LoadMarketplaces(h.extensionRoot)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 			return
@@ -63,7 +63,7 @@ func (h *Handler) installPlugin(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "path or marketplace_path+plugin_name is required", http.StatusBadRequest)
 		return
 	}
-	plugin, err := extensions.InstallPlugin(runtime.metadata.WorkspaceRoot, source)
+	plugin, err := extensions.InstallPlugin(h.extensionRoot, source)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
@@ -83,7 +83,7 @@ func (h *Handler) uninstallPlugin(writer http.ResponseWriter, request *http.Requ
 		http.Error(writer, err.Error(), http.StatusNotFound)
 		return
 	}
-	if err := extensions.UninstallPlugin(runtime.metadata.WorkspaceRoot, request.PathValue("pluginName")); err != nil {
+	if err := extensions.UninstallPlugin(h.extensionRoot, request.PathValue("pluginName")); err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -118,7 +118,7 @@ func (h *Handler) startMCPOAuth(writer http.ResponseWriter, request *http.Reques
 			serverURL = strings.TrimSpace(status.SourcePath)
 		}
 	}
-	catalog, err := extensions.Load(runtime.metadata.WorkspaceRoot)
+	catalog, err := extensions.Load(h.extensionRoot)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -142,7 +142,7 @@ func (h *Handler) startMCPOAuth(writer http.ResponseWriter, request *http.Reques
 		scheme = "https"
 	}
 	redirect := fmt.Sprintf("%s://%s/oauth/mcp/callback", scheme, host)
-	login, err := mcp.BeginLogin(request.Context(), http.DefaultClient, serverName, serverURL, runtime.metadata.WorkspaceRoot, redirect)
+	login, err := mcp.BeginLogin(request.Context(), http.DefaultClient, serverName, serverURL, h.extensionRoot, redirect)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadGateway)
 		return

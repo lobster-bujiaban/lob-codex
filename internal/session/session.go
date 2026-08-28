@@ -33,6 +33,7 @@ type Session struct {
 	rollout       *rolloutRecorder
 	tools         *tools.Router
 	workspaceRoot string
+	extensionRoot string
 	extensions    extensions.Catalog
 	mcpClients    []*mcp.Client
 	extensionMu   sync.RWMutex
@@ -85,13 +86,15 @@ type MCPServerStatus struct {
 	NeedsAuth  bool       `json:"needs_auth,omitempty"`
 }
 type ExtensionInventory struct {
-	Skills     []extensions.Skill   `json:"skills"`
-	Plugins    []extensions.Plugin  `json:"plugins"`
-	MCPServers []MCPServerStatus    `json:"mcp_servers"`
-	Hooks      []extensions.Hook    `json:"hooks,omitempty"`
-	Apps       []extensions.App     `json:"apps,omitempty"`
-	Commands   []extensions.Command `json:"commands,omitempty"`
-	Agents     []extensions.Agent   `json:"agents,omitempty"`
+	ExtensionRoot string               `json:"extension_root"`
+	WorkspaceRoot string               `json:"workspace_root"`
+	Skills        []extensions.Skill   `json:"skills"`
+	Plugins       []extensions.Plugin  `json:"plugins"`
+	MCPServers    []MCPServerStatus    `json:"mcp_servers"`
+	Hooks         []extensions.Hook    `json:"hooks,omitempty"`
+	Apps          []extensions.App     `json:"apps,omitempty"`
+	Commands      []extensions.Command `json:"commands,omitempty"`
+	Agents        []extensions.Agent   `json:"agents,omitempty"`
 }
 
 // New creates a session and starts the long-running submission loop.
@@ -114,6 +117,12 @@ func NewInWorkspace(client model.Client, workspaceRoot string) (*Session, *IO, e
 
 // NewInWorkspaceWithRollout creates or resumes a Session from one canonical rollout.
 func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath string) (*Session, *IO, error) {
+	return NewInWorkspaceWithRolloutAndExtensions(client, workspaceRoot, rolloutPath, workspaceRoot)
+}
+
+// NewInWorkspaceWithRolloutAndExtensions separates the thread tool workspace
+// from the application-owned extension root.
+func NewInWorkspaceWithRolloutAndExtensions(client model.Client, workspaceRoot, rolloutPath, extensionRoot string) (*Session, *IO, error) {
 	workspaceRoot, err := filepath.Abs(workspaceRoot)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve workspace root: %w", err)
@@ -129,6 +138,21 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 	if !info.IsDir() {
 		return nil, nil, errors.New("workspace root must be a directory")
 	}
+	extensionRoot, err = filepath.Abs(extensionRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve extension root: %w", err)
+	}
+	extensionRoot, err = filepath.EvalSymlinks(extensionRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("canonicalize extension root: %w", err)
+	}
+	info, err = os.Stat(extensionRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open extension root: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, nil, errors.New("extension root must be a directory")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	submissions := make(chan Submission)
 	events := make(chan protocol.Event, 128)
@@ -141,9 +165,9 @@ func NewInWorkspaceWithRollout(client model.Client, workspaceRoot, rolloutPath s
 		client: client, events: events, ctx: ctx, cancel: cancel,
 		tools: tools.NewDefaultRouter(environment), approvals: make(map[string]pendingApproval),
 		elicitations:  make(map[string]pendingElicitation),
-		workspaceRoot: workspaceRoot, mcpStatuses: map[string]MCPServerStatus{},
+		workspaceRoot: workspaceRoot, extensionRoot: extensionRoot, mcpStatuses: map[string]MCPServerStatus{},
 	}
-	catalog, err := extensions.Load(workspaceRoot)
+	catalog, err := extensions.Load(extensionRoot)
 	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("load extensions: %w", err)
@@ -361,7 +385,7 @@ func (s *Session) refreshExtensions() error {
 	if active != nil {
 		return errors.New("cannot refresh extensions while a turn is active")
 	}
-	catalog, err := extensions.Load(s.workspaceRoot)
+	catalog, err := extensions.Load(s.extensionRoot)
 	if err != nil {
 		return err
 	}
@@ -384,7 +408,7 @@ func (s *Session) connectMCPServers(configs []extensions.MCPServer) {
 	for _, config := range configs {
 		status := MCPServerStatus{Name: config.Name, State: "starting", SourcePath: config.SourcePath}
 		s.setMCPStatus(status)
-		client, err := mcp.Start(s.ctx, config, s.workspaceRoot)
+		client, err := mcp.Start(s.ctx, config, s.extensionRoot)
 		if err != nil {
 			status.State = "failed"
 			status.Error = err.Error()
@@ -577,7 +601,10 @@ func (s *Session) setMCPStatus(status MCPServerStatus) {
 func (s *Session) ExtensionInventory() ExtensionInventory {
 	s.extensionMu.RLock()
 	defer s.extensionMu.RUnlock()
-	inventory := ExtensionInventory{Plugins: append([]extensions.Plugin(nil), s.extensions.Plugins...)}
+	inventory := ExtensionInventory{
+		ExtensionRoot: s.extensionRoot, WorkspaceRoot: s.workspaceRoot,
+		Plugins: append([]extensions.Plugin(nil), s.extensions.Plugins...),
+	}
 	for _, plugin := range s.extensions.Plugins {
 		if !plugin.Enabled {
 			continue

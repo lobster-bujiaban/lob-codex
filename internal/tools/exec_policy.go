@@ -12,6 +12,9 @@ import (
 )
 
 var readOnlyCommands = []string{"file", "find", "head", "ls", "pwd", "rg", "sed", "stat", "tail", "wc"}
+var readOnlyGitSubcommands = []string{
+	"diff", "grep", "log", "ls-files", "rev-parse", "show", "status",
+}
 
 // ExecPolicyRequirement describes whether a command can run and which reusable
 // prefix may be offered for Session approval.
@@ -305,10 +308,46 @@ func parseSimpleCommand(command string) ([]string, bool, error) {
 }
 
 func isBuiltInReadOnly(tokens []string) bool {
-	if !slices.Contains(readOnlyCommands, filepath.Base(tokens[0])) {
+	command := filepath.Base(tokens[0])
+	if command == "git" {
+		return isBuiltInReadOnlyGit(tokens)
+	}
+	if !slices.Contains(readOnlyCommands, command) {
 		return false
 	}
-	for _, token := range tokens[1:] {
+	return hasSafeReadOnlyArguments(tokens[1:])
+}
+
+func isBuiltInReadOnlyGit(tokens []string) bool {
+	if len(tokens) < 2 {
+		return false
+	}
+	index := 1
+	for index < len(tokens) && strings.HasPrefix(tokens[index], "-") {
+		option := tokens[index]
+		if option == "--no-pager" || option == "--literal-pathspecs" || option == "--no-optional-locks" {
+			index++
+			continue
+		}
+		if option == "-C" || option == "--git-dir" || option == "--work-tree" {
+			return false
+		}
+		break
+	}
+	if index >= len(tokens) || !slices.Contains(readOnlyGitSubcommands, tokens[index]) {
+		return false
+	}
+	arguments := tokens[index+1:]
+	for _, argument := range arguments {
+		if strings.HasPrefix(argument, "--output") || argument == "--ext-diff" || argument == "--textconv" || strings.HasPrefix(argument, "--open-files-in-pager") {
+			return false
+		}
+	}
+	return hasSafeReadOnlyArguments(arguments)
+}
+
+func hasSafeReadOnlyArguments(tokens []string) bool {
+	for _, token := range tokens {
 		trimmed := strings.Trim(token, "'\"")
 		if filepath.IsAbs(trimmed) || trimmed == ".." || strings.HasPrefix(trimmed, "../") || strings.Contains(trimmed, "/../") {
 			return false

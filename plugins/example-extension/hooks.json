@@ -1,8 +1,0 @@
-{
-  "sessionStart": [
-    {
-      "type": "command",
-      "command": "echo 'example-extension session started'"
-    }
-  ]
-}

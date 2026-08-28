@@ -58,7 +58,8 @@ func TestMarketplaceInstallUninstallAndComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(catalog.Plugins) != 1 || catalog.Skills["demo-plugin:demo"].Name == "" || len(catalog.MCPServers) != 1 {
+	installedRoot := filepath.Join(workspace, ".agents", "plugins", "demo-plugin")
+	if len(catalog.Plugins) != 1 || catalog.Skills["demo-plugin:demo"].Name == "" || len(catalog.MCPServers) != 1 || catalog.MCPServers[0].WorkingDirectory != installedRoot {
 		t.Fatalf("catalog = %+v skills=%+v mcp=%+v", catalog.Plugins, catalog.Skills, catalog.MCPServers)
 	}
 

@@ -26,14 +26,15 @@ var webFiles embed.FS
 
 // Handler routes App Server requests to independent thread-owned Sessions.
 type Handler struct {
-	mux         *http.ServeMux
-	client      model.Client
-	store       threadStore
-	defaultID   string
-	threadsMu   sync.Mutex
-	threads     map[string]*threadRuntime
-	oauthMu     sync.Mutex
-	oauthLogins map[string]pendingOAuth
+	mux           *http.ServeMux
+	client        model.Client
+	store         threadStore
+	extensionRoot string
+	defaultID     string
+	threadsMu     sync.Mutex
+	threads       map[string]*threadRuntime
+	oauthMu       sync.Mutex
+	oauthLogins   map[string]pendingOAuth
 }
 
 type pendingOAuth struct {
@@ -88,7 +89,8 @@ func NewHandler(client model.Client) *Handler {
 	const defaultThreadID = "current-workspace"
 	handler := &Handler{
 		mux: http.NewServeMux(), client: client, store: newThreadStore(dataRoot),
-		defaultID: defaultThreadID, threads: make(map[string]*threadRuntime),
+		extensionRoot: dataRoot,
+		defaultID:     defaultThreadID, threads: make(map[string]*threadRuntime),
 		oauthLogins: make(map[string]pendingOAuth),
 	}
 	handler.threads[defaultThreadID] = &threadRuntime{metadata: threadMetadata{
@@ -191,7 +193,7 @@ func (h *Handler) setPluginEnabled(writer http.ResponseWriter, request *http.Req
 		http.Error(writer, err.Error(), 404)
 		return
 	}
-	if err := extensions.SetPluginEnabled(runtime.metadata.WorkspaceRoot, request.PathValue("pluginName"), input.Enabled); err != nil {
+	if err := extensions.SetPluginEnabled(h.extensionRoot, request.PathValue("pluginName"), input.Enabled); err != nil {
 		http.Error(writer, err.Error(), 500)
 		return
 	}
@@ -693,8 +695,8 @@ func (h *Handler) sessionIO(runtime *threadRuntime) (*session.IO, error) {
 	if runtime.io != nil {
 		return runtime.io, nil
 	}
-	sess, sessionIO, err := session.NewInWorkspaceWithRollout(
-		h.client, runtime.metadata.WorkspaceRoot, h.store.rolloutPath(runtime.metadata.ID),
+	sess, sessionIO, err := session.NewInWorkspaceWithRolloutAndExtensions(
+		h.client, runtime.metadata.WorkspaceRoot, h.store.rolloutPath(runtime.metadata.ID), h.extensionRoot,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("start thread %s: %w", runtime.metadata.ID, err)

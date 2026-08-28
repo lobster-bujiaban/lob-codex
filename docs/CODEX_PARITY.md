@@ -250,13 +250,13 @@ PTY `rows/cols` resize 参数。Codex TUI resize 用于界面重排，不属于 
 - 历史页面由 canonical ResponseItem 重建消息与工具卡片；尚未恢复 Codex 完整 Turn 状态、审批卡片和终端增量事件。
 - Fork 已支持历史前缀与 workspace 继承，尚未持久化 Codex 的 `forked_from_id` 和 ordinal lineage 元数据。
 - 运行时流程视图从 canonical ResponseItem 与 TurnComplete EventMsg 重建 Turn、Step、工具调用、精确 token usage 和汇总指标；审批与终端增量事件的完整回放仍待补齐。
-- 插件发现工作区 `plugins/*/.codex-plugin/plugin.json` 与 `.agents/plugins/*`，加载 skills、MCP、hooks、apps、commands、agents；本地 `marketplace.json` 可安装到 `.agents/plugins/` 并卸载；尚未实现 Codex 远程 marketplace、Git/npm source 与 keyring 凭据。
-- `plugins/example-extension` 提供覆盖上述贡献类型的工作区示例，`examples/mcp-server` 提供最小 stdio MCP 握手、工具发现与调用链，`.agents/plugins/marketplace.json` 用于验证本地安装/卸载流程；这些是演示夹具，不改变 Codex 扩展生命周期。
+- App Server 将应用扩展根与 Thread 工作区分离：所有 Thread 从 LOB Codex 启动目录的 `plugins/*/.codex-plugin/plugin.json` 与 `.agents/plugins/*` 加载 skills、MCP、hooks、apps、commands、agents，工具与 Hook 仍作用于 Thread 工作区；本地 `marketplace.json` 安装到应用根 `.agents/plugins/`。独立 Session API 默认仍以工作区作为扩展根；尚未实现 Codex 远程 marketplace、Git/npm source 与 keyring 凭据。
 - Skill 首版解析 `SKILL.md` 的 name/description，并在用户显式 `$skill-name` 提及时以独立 developer item 注入；尚未实现 Codex 的模型辅助隐式选择与可用 Skill 列表提示。
 - Responses API reasoning item 回放保留必填 `summary` 字段；上游未返回摘要条目时序列化为空数组，避免后续 Step 因缺少 `input[*].summary` 被拒绝。
 - MCP 支持 stdio JSON-RPC 与 Streamable HTTP（POST JSON/SSE + GET 会话流）、启动超时、连接有界重试、`tools/list_changed` 刷新、elicitation schema 表单，以及 RFC 9728/7591 文件型 OAuth；尚未实现 Codex RMCP keyring、executor 路由 OAuth 与完整 OpenAI form elicitation。
 - App Server v2 兼容层提供 `/api/v2/threads`、`thread read(includeTurns)`、turn start/steer/interrupt 与 `/events?after=<ordinal>`；实时 NDJSON 使用 Codex v2 notification method 命名。原生 JSON-RPC initialize/initialized 握手、WebSocket/stdio transport、通知 opt-out 和分页 thread list 尚未实现。
 - 删除工作区只移除 LOB Codex 自有 thread metadata 与 rollout，不删除目标工作区的 `tmp/` 或其他项目文件；共享工作区可能被其他 Harness 使用，目录所有权不能由绑定关系推断。
+- ExecPolicy 对 `&&`、`||`、管道和分号连接的纯只读命令逐段判定；`git status/diff/log/show/grep/ls-files/rev-parse` 可自动执行，任何写入型 Git 子命令或 `-C/--git-dir/--work-tree` 路径覆盖仍进入审批。
 - 断线恢复只重放 rollout 中的 durable SessionMeta/TurnContext/EventMsg/ResponseItem/Compacted；文本与终端 Delta 按 Codex 的 ephemeral 边界不伪造重放，客户端从 canonical item/turn 状态恢复后继续接收新通知。
 - `apply_patch` 已按 Codex 语法解析 Add/Delete/Update/Move，并用 seek_sequence 四级匹配（exact / rstrip / trim / Unicode 标点）写回工作区，摘要为 `Success. Updated the following files:`。路径不得逃出 workspace，且保护 `.git` 与 `.codex`。Responses 面用 function `input`，尚未实现 Codex freeform custom tool、streaming `PatchApplyUpdated` 与 PreserveLineEndings。
 

@@ -84,13 +84,16 @@ go run ./cmd/lob-codex
 也兼容 `OPENAI_API_KEY`、`OPENAI_MODEL` 和 `OPENAI_BASE_URL` 环境变量。
 程序启动时会自动读取当前目录的 `.env`，已有系统环境变量优先级更高。
 
-### 扩展示例
+### 开发插件
 
-仓库内置 `plugins/example-extension`，覆盖 Skill、MCP Server、Hook、App、Command 和 Agent；
-`.agents/plugins/marketplace.json` 还提供一个可安装、卸载的本地 Marketplace 插件。启动 GUI 后，
-打开“Skills、插件与 MCP”并点击“重新扫描并连接”即可看到各类型示例。MCP 示例暴露只读的
-`example_echo` 工具；Skill 可在消息中通过 `$example-extension:hello` 显式触发。示例 MCP 将
-Go 编译缓存放在 `/tmp/lob-codex-example-go-cache`，以兼容 GUI 的受限启动环境。
+App Server 始终从 LOB Codex 启动目录加载插件，切换 Thread 工作区只改变工具实际操作的项目目录。
+仓库内置三项无外部依赖的开发 Skill，需在消息中显式触发：
+
+- `$code-review:review`：检查当前改动中的正确性、回归、数据丢失和验证缺口。
+- `$project-map:map`：定位入口、模块边界和关键运行调用链。
+- `$docs-sync:sync`：检查代码与 README、架构、API、配置及运维文档是否同步。
+
+启动 GUI 后，打开“Skills、插件与 MCP”并点击“重新扫描并连接”即可重新加载。
 
 当前最小 GUI 包含：多轮消息输入、Conversation History、流式回复、`echo` Tool Loop、
 `exec_command`、批准一次/拒绝、工具生命周期展示和错误展示。命令执行当前仅支持 macOS

@@ -111,6 +111,9 @@ func startOnce(ctx context.Context, config extensions.MCPServer, cwd string) (*C
 	}
 	cmd := exec.CommandContext(ctx, config.Command, config.Args...)
 	cmd.Dir = cwd
+	if config.WorkingDirectory != "" {
+		cmd.Dir = config.WorkingDirectory
+	}
 	cmd.Env = os.Environ()
 	for key, value := range config.Env {
 		cmd.Env = append(cmd.Env, key+"="+value)

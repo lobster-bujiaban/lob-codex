@@ -248,6 +248,66 @@ func TestThreadWorkspacePersistsAndRoutesExec(t *testing.T) {
 	}
 }
 
+func TestThreadLoadsExtensionsFromApplicationRoot(t *testing.T) {
+	applicationRoot := t.TempDir()
+	t.Chdir(applicationRoot)
+	workspace := t.TempDir()
+	canonicalApplicationRoot, err := filepath.EvalSymlinks(applicationRoot)
+	if err != nil {
+		t.Fatalf("EvalSymlinks application root: %v", err)
+	}
+	canonicalWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		t.Fatalf("EvalSymlinks workspace: %v", err)
+	}
+	manifest := filepath.Join(applicationRoot, "plugins", "global-example", ".codex-plugin", "plugin.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
+		t.Fatalf("MkdirAll plugin: %v", err)
+	}
+	if err := os.WriteFile(manifest, []byte(`{"name":"global-example","version":"1.0.0"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile plugin: %v", err)
+	}
+
+	handler := appserver.NewHandler(model.NewFakeClient())
+	defer handler.Close(context.Background())
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	createResponse, err := http.Post(server.URL+"/api/threads", "application/json", strings.NewReader(`{"workspace_root":"`+workspace+`"}`))
+	if err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	var thread struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&thread); err != nil {
+		createResponse.Body.Close()
+		t.Fatalf("decode thread: %v", err)
+	}
+	createResponse.Body.Close()
+
+	response, err := http.Get(server.URL + "/api/threads/" + thread.ID + "/extensions")
+	if err != nil {
+		t.Fatalf("get extensions: %v", err)
+	}
+	defer response.Body.Close()
+	var inventory struct {
+		ExtensionRoot string `json:"extension_root"`
+		WorkspaceRoot string `json:"workspace_root"`
+		Plugins       []struct {
+			Name string `json:"name"`
+		} `json:"plugins"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&inventory); err != nil {
+		t.Fatalf("decode extensions: %v", err)
+	}
+	if inventory.ExtensionRoot != canonicalApplicationRoot || inventory.WorkspaceRoot != canonicalWorkspace {
+		t.Fatalf("roots = extension %q workspace %q", inventory.ExtensionRoot, inventory.WorkspaceRoot)
+	}
+	if len(inventory.Plugins) != 1 || inventory.Plugins[0].Name != "global-example" {
+		t.Fatalf("plugins = %+v", inventory.Plugins)
+	}
+}
+
 func TestChatStreamsToolLifecycleAndFollowUp(t *testing.T) {
 	handler := appserver.NewHandler(model.NewFakeClient())
 	defer handler.Close(context.Background())
