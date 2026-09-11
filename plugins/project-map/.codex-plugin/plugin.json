@@ -1,0 +1,18 @@
+{
+  "name": "project-map",
+  "version": "0.1.0",
+  "description": "梳理陌生代码库，生成有文件依据的架构与调用链地图",
+  "author": {
+    "name": "LOB Codex"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "项目地图",
+    "shortDescription": "快速理解陌生代码库",
+    "longDescription": "定位真实入口，跟踪重要请求和生命周期路径，并结合文件依据说明模块职责。",
+    "developerName": "LOB Codex",
+    "category": "开发效率",
+    "capabilities": ["Read"],
+    "defaultPrompt": "梳理当前项目，并展示最重要的运行调用链。"
+  }
+}

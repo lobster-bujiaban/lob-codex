@@ -1,0 +1,12 @@
+bin/
+dist/
+coverage.out
+.env
+.env.*
+!.env.example
+tmp/
+*.log
+.DS_Store
+.idea/
+wechat/
+videos/

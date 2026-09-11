@@ -1,0 +1,1870 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f3eb">
+  <meta name="description" content="LOB Codex - 用 Go 等价实现 Codex Harness">
+  <title>LOB Codex · 用 Go 读懂 Codex</title>
+  <style>
+    :root {
+      --paper: #fbfaf7;
+      --canvas: #f3efe7;
+      --surface: #ffffff;
+      --surface-warm: #fff8ee;
+      --ink: #172d4f;
+      --ink-soft: #40536e;
+      --muted: #7b8798;
+      --line: #e6dfd4;
+      --orange: #ed5a2a;
+      --orange-dark: #c9421b;
+      --orange-soft: #fff0e7;
+      --navy: #17335e;
+      --green: #24855b;
+      --red: #c9463d;
+      --shadow: 0 18px 50px rgba(37, 49, 67, .09);
+      --font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { overflow: hidden; background: var(--canvas); color: var(--ink); font: 14px/1.6 var(--font); }
+    button, textarea { font: inherit; }
+    button { color: inherit; }
+
+    .app-shell { display: grid; grid-template-columns: 276px minmax(0, 1fr); height: 100vh; }
+    .sidebar {
+      display: flex; flex-direction: column; min-height: 0; padding: 24px 18px 18px;
+      overflow-y: auto; background: #f8f4ec; border-right: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0 5px 22px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+    .brand-logo {
+      width: 48px; height: 48px; object-fit: cover; border-radius: 15px;
+      background: #fff; box-shadow: 0 6px 18px rgba(201, 66, 27, .12);
+    }
+    .brand-copy { min-width: 0; }
+    .brand-copy strong { display: block; font-size: 18px; letter-spacing: -.02em; }
+    .brand-copy span { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+    .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #eee9e0; }
+    .mode-button { padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 650; cursor: pointer; }
+    .mode-button.active { background: #fff; color: var(--ink); box-shadow: 0 2px 8px rgba(37,49,67,.08); }
+    .mode-button[data-mode="learning"].active { color: var(--orange-dark); }
+    .is-hidden { display: none !important; }
+    body[data-mode-view="work"] .thread-list { max-height: none; overflow: visible; }
+
+    .section-label { margin: 24px 7px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; }
+    .concept-list { display: grid; gap: 5px; }
+    .concept {
+      display: flex; align-items: center; gap: 10px; padding: 10px 11px;
+      width: 100%; border: 0; border-radius: 11px; background: transparent; color: var(--ink-soft); font-size: 12px;
+      text-align: left; cursor: pointer;
+    }
+    .concept:hover { background: #f0ebe3; color: var(--ink); }
+    .concept.active { background: #ebe5db; color: var(--ink); font-weight: 650; }
+    .concept-index {
+      display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto;
+      border: 1px solid #d9d1c5; border-radius: 8px; background: #fff; color: var(--orange-dark);
+      font: 700 10px/1 var(--font);
+    }
+    .concept.active .concept-index { border-color: var(--orange); background: var(--orange); color: #fff; }
+    .new-chat-primary { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 12px; padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink); font-size: 12px; text-align: left; cursor: pointer; }
+    .new-chat-primary:hover { background: #ebe7df; }.new-chat-primary svg { width: 17px; height: 17px; }
+    .thread-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+    .thread-header .section-label { margin: 0; }
+    .new-thread { border: 0; background: transparent; color: var(--orange-dark); font-size: 11px; cursor: pointer; }
+    .thread-list { display: grid; gap: 13px; margin-top: 7px; max-height: 180px; overflow: visible; }
+    .workspace-group { min-width: 0; }
+    .workspace-group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 32px; padding: 4px 5px; border-radius: 8px; }
+    .workspace-group-head:hover { background: #eeeae3; }
+    .workspace-group-name { min-width: 0; }.workspace-group-name strong, .workspace-group-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .workspace-group-name { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }.workspace-group-name svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    .workspace-group-name strong { font-size: 11px; font-weight: 650; }.workspace-group-name span { display: none; }
+    .workspace-group-actions { position: relative; display: flex; gap: 2px; flex: 0 0 auto; }
+    .workspace-action { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .workspace-action:hover { background: #ded9d0; color: var(--ink); }
+    .workspace-action.danger:hover { background: #f3d9d4; color: var(--red); }
+    .workspace-action svg { width: 14px; height: 14px; }
+    .workspace-menu { position: absolute; z-index: 10; width: 150px; margin: 28px 0 0 -122px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: 0 12px 30px rgba(37,49,67,.14); }
+    .workspace-menu button { display: flex; width: 100%; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); font-size: 10px; text-align: left; cursor: pointer; }
+    .workspace-menu button:hover { background: #f2eee8; }.workspace-menu button.danger { color: var(--red); }
+    .workspace-threads { display: grid; gap: 2px; margin-top: 2px; padding-left: 22px; min-width: 0; }
+    .thread-row { display: flex; align-items: center; gap: 2px; min-width: 0; width: 100%; }
+    .thread-item { flex: 1; min-width: 0; overflow: hidden; padding: 7px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft); text-align: left; cursor: pointer; }
+    .thread-item:hover, .thread-item.active, .thread-row:hover .thread-item { background: #e9e5df; color: var(--ink); }
+    .thread-item strong, .thread-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .thread-item strong { font-size: 11px; font-weight: 500; }.thread-item span { display: none; }
+
+    .sidebar-bottom { margin-top: auto; }
+    .social-title { margin: 0 0 8px 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+    .social-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .social-card {
+      display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; padding: 9px 6px;
+      border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.72); cursor: pointer;
+    }
+    .social-card:hover { border-color: #efb99f; background: #fff; }
+    .social-card img { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; }
+    .social-card.douyin img { object-position: 50% 39%; }
+    .social-card strong { overflow: hidden; max-width: 100%; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .qr-dialog { width: min(420px, calc(100vw - 28px)); padding: 0; border: 0; border-radius: 20px; background: #fff; color: var(--ink); box-shadow: 0 24px 80px rgba(23,45,79,.25); }
+    .qr-dialog::backdrop { background: rgba(23,45,79,.42); backdrop-filter: blur(3px); }
+    .qr-dialog-inner { position: relative; padding: 24px; text-align: center; }
+    .qr-dialog h2 { margin: 0; font-size: 18px; }
+    .qr-dialog p { margin: 5px 0 16px; color: var(--muted); font-size: 12px; }
+    .qr-dialog img { display: block; width: 100%; max-height: 570px; margin: 0 auto; border-radius: 13px; object-fit: contain; }
+    .qr-dialog-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #f0ece5; cursor: pointer; }
+    .workspace-dialog { width: min(600px, calc(100vw - 28px)); }
+    .workspace-dialog form { display: block; padding: 26px; border: 0; border-radius: 0; box-shadow: none; }
+    .workspace-dialog h2 { margin: 0; font-size: 19px; }.workspace-dialog p { margin: 7px 0 18px; color: var(--muted); font-size: 12px; }
+    .workspace-field { display: flex; gap: 8px; }.workspace-field input { min-width: 0; flex: 1; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .workspace-field button, .workspace-actions button { padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); cursor: pointer; }
+    .workspace-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }.workspace-actions .primary { border-color: var(--orange); background: var(--orange); color: #fff; }
+    .workspace-error { min-height: 18px; margin-top: 8px; color: #b42318; font-size: 11px; }
+    .repo-link { display: block; margin-top: 12px; color: var(--muted); font-size: 10px; text-align: center; text-decoration: none; }
+    .repo-link:hover { color: var(--orange-dark); }
+
+    .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper); }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; height: 72px;
+      padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(251,250,247,.92);
+    }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .view-switch { display: flex; align-self: stretch; gap: 18px; margin-right: 8px; }
+    .view-button { position: relative; padding: 0 2px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; cursor: pointer; }
+    .view-button.active { color: var(--ink); }
+    .view-button.active::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: var(--orange); }
+    .page-title span { display: block; color: var(--muted); font-size: 11px; }
+    .page-title strong { display: block; margin-top: 1px; font-size: 15px; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px;
+      border: 1px solid #cfe5d8; border-radius: 999px; background: #f3fbf6; color: var(--green); font-size: 11px; font-weight: 650;
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(36,133,91,.1); }
+    .extensions-button { padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink-soft); font-size: 11px; cursor: pointer; }
+    .extensions-dialog { width: min(720px, calc(100vw - 28px)); }
+    .extensions-shell { position: relative; padding: 25px; }.extensions-shell h2 { margin: 0; font-size: 19px; }.extensions-shell > p { margin: 6px 0 16px; color: var(--muted); font-size: 11px; }
+    .extensions-actions { display:flex;gap:8px;margin-bottom:8px }.extensions-actions button { padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer }.extensions-actions .primary{background:var(--ink);color:#fff}.extensions-actions button:disabled{opacity:.6;cursor:wait}.extensions-status{min-height:16px;margin:0 0 15px;color:var(--muted);font-size:10px;word-break:break-all}.extensions-status.success{color:var(--green)}.extensions-status.error{color:var(--red)}
+    .extensions-section { margin-top: 15px; }.extensions-section h3 { margin:0 0 7px;font-size:13px }.extension-list{display:grid;gap:7px}.extension-item{padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#faf9f6}.extension-head{display:flex;justify-content:space-between;gap:10px}.extension-name{font-size:12px;font-weight:700}.extension-state{font-size:10px;color:var(--muted)}.extension-state.ready{color:var(--green)}.extension-state.failed{color:var(--red)}.extension-meta{margin-top:4px;color:var(--muted);font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.extension-error{margin-top:6px;color:var(--red);font-size:10px}.extension-tools{margin-top:6px;color:#5b4ba8;font-size:10px;line-height:1.65;white-space:pre-line}
+
+    .conversation { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+    #messages {
+      display: flex; flex-direction: column; gap: 22px; width: min(820px, calc(100% - 56px));
+      min-height: 100%; margin: 0 auto; padding: 38px 0 190px;
+    }
+    .welcome { display: grid; justify-items: center; margin: auto 0; padding: 35px 0 70px; text-align: center; }
+    .welcome-logo { width: 128px; height: 128px; object-fit: cover; border-radius: 34px; background: #fff; box-shadow: var(--shadow); }
+    .welcome h1 { margin: 20px 0 5px; font-size: 25px; letter-spacing: -.03em; }
+    .welcome > p { max-width: 470px; margin: 0; color: var(--muted); font-size: 13px; }
+    .prompt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; width: min(680px, 100%); margin-top: 27px; }
+    .prompt-chip {
+      min-height: 76px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 14px;
+      background: #fff; color: var(--ink-soft); text-align: left; cursor: pointer; transition: .18s ease;
+    }
+    .prompt-chip:hover { transform: translateY(-2px); border-color: #efb99f; box-shadow: 0 10px 24px rgba(54, 63, 74, .08); }
+    .prompt-chip span { display: block; margin-bottom: 3px; color: var(--orange-dark); font-size: 10px; font-weight: 750; letter-spacing: .08em; }
+
+    .message { display: flex; gap: 11px; max-width: 84%; animation: enter .22s ease both; }
+    .message.user { align-self: flex-end; flex-direction: row-reverse; }
+    .message.assistant { align-self: flex-start; }
+    .avatar {
+      display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto;
+      border-radius: 11px; overflow: hidden; background: var(--navy); color: #fff; font-size: 11px; font-weight: 750;
+    }
+    .assistant .avatar { border: 1px solid #f0d9ca; background: var(--orange-soft); }
+    .assistant .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .bubble { padding: 12px 15px; border-radius: 5px 17px 17px 17px; white-space: pre-wrap; word-break: break-word; line-height: 1.75; }
+    .assistant .bubble { border: 1px solid var(--line); background: #fff; box-shadow: 0 7px 22px rgba(37,49,67,.045); }
+    .markdown { white-space: normal; }
+    .markdown > :first-child { margin-top: 0; }
+    .markdown > :last-child { margin-bottom: 0; }
+    .markdown p { margin: 0 0 12px; }
+    .markdown h1, .markdown h2, .markdown h3 { margin: 20px 0 9px; color: var(--ink); line-height: 1.35; }
+    .markdown h1 { font-size: 20px; }.markdown h2 { font-size: 17px; }.markdown h3 { font-size: 15px; }
+    .markdown ul, .markdown ol { margin: 7px 0 13px; padding-left: 24px; }
+    .markdown li { margin: 4px 0; }
+    .markdown blockquote { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #efb99f; background: #fff8f2; color: var(--muted); }
+    .markdown code { padding: 2px 5px; border-radius: 5px; background: #f1eee9; color: #b44420; font: .9em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .markdown pre { overflow-x: auto; margin: 12px 0; padding: 13px 15px; border-radius: 11px; background: #172d4f; color: #eaf0f7; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+    .markdown pre code { padding: 0; background: transparent; color: inherit; }
+    .markdown a { color: #315bd4; text-decoration: none; }.markdown a:hover { text-decoration: underline; }
+    .message-content { min-width: 0; }
+    .message-actions { display: flex; gap: 2px; margin-top: 6px; }
+    .message-action { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .message-action:hover { background: #eeeae3; color: var(--ink-soft); }
+    .message-action:disabled { opacity: .45; cursor: wait; }
+    .message-action svg { width: 15px; height: 15px; }
+    .user .bubble { border-radius: 17px 5px 17px 17px; background: var(--navy); color: #fff; }
+    .message.error .bubble { border-color: #efc0bc; background: #fff5f4; color: var(--red); }
+    .activity {
+      align-self: flex-start; display: flex; align-items: flex-start; gap: 9px; max-width: 78%;
+      color: var(--muted); font-size: 12px; line-height: 1.65; animation: enter .22s ease both;
+    }
+    .activity-icon { width: 17px; flex: 0 0 17px; color: #7f8792; text-align: center; }
+    .activity.running .activity-icon { animation: blink .8s infinite alternate; }
+    .activity-text { white-space: pre-wrap; }
+    .tool-call {
+      align-self: flex-start; width: min(620px, 88%); padding: 0;
+      border: 1px solid #d8d2ef; border-radius: 14px; background: #faf9ff; color: var(--ink-soft);
+      animation: enter .22s ease both;
+    }
+    .tool-call-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 15px; cursor: pointer; list-style: none; }
+    .tool-call-header::-webkit-details-marker { display: none; }
+    .tool-call-header::before { content: "›"; color: var(--muted); transition: transform .15s ease; }
+    .tool-call[open] .tool-call-header::before { transform: rotate(90deg); }
+    .tool-call-body { padding: 0 15px 13px; }
+    .tool-call-name { color: #5b4ba8; font-size: 12px; font-weight: 750; }
+    .tool-call-status { color: var(--muted); font-size: 10px; }
+    .tool-call.completed .tool-call-status { color: var(--green); }
+    .tool-call pre { overflow-x: auto; margin: 0; color: #53627a; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .tool-call-output { margin-top: 9px; padding-top: 9px; border-top: 1px solid #e4e0f2; font-size: 12px; }
+    .approval-card { align-self: flex-start; width: min(620px, 90%); padding: 16px; border: 1px solid #efb99f; border-radius: 16px; background: #fff8ee; animation: enter .22s ease both; }
+    .approval-card h3 { margin: 0; color: var(--orange-dark); font-size: 14px; }
+    .approval-card p { margin: 5px 0 10px; color: var(--muted); font-size: 11px; }
+    .approval-card pre { overflow-x: auto; margin: 0; padding: 10px; border-radius: 10px; background: #172d4f; color: #fff; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .approval-actions button { padding: 7px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; }
+    .approval-actions .approve { border-color: var(--orange); background: var(--orange); color: #fff; }
+    .approval-actions button:disabled { opacity: .55; cursor: default; }
+    .approval-result { margin-top: 10px; color: var(--muted); font-size: 11px; }
+    .elicitation-fields { display: grid; gap: 8px; margin-top: 10px; }
+    .elicitation-fields label { display: grid; gap: 4px; color: var(--ink-soft); font-size: 11px; }
+    .elicitation-fields input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .extension-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .extension-actions button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; font-size: 10px; }
+    .extension-actions button.danger { color: var(--red); }
+    .typing::after { content: ""; display: inline-block; width: 5px; height: 14px; margin-left: 4px; background: var(--orange); vertical-align: -2px; animation: blink .7s infinite alternate; }
+    @keyframes enter { from { opacity: 0; transform: translateY(7px); } }
+    @keyframes blink { to { opacity: .15; } }
+
+    .flow-view { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 28px 90px; }
+    .flow-shell { width: min(920px, 100%); margin: 0 auto; }
+    .flow-summary { padding: 18px 20px; border: 1px solid #f0cf82; border-radius: 16px; background: #fffaf0; }
+    .flow-summary h2 { margin: 0 0 10px; font-size: 15px; }
+    .flow-metrics { display: flex; flex-wrap: wrap; gap: 7px; }
+    .flow-metric { padding: 5px 9px; border-radius: 999px; background: #ffedb9; color: #7a5710; font-size: 10px; font-weight: 700; }
+    .flow-hint { margin: 9px 0 0; color: #8a7040; font-size: 11px; }
+    .flow-storage { display: grid; gap: 5px; margin-top: 12px; padding-top: 11px; border-top: 1px solid #ecdcae; }
+    .flow-storage-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; color: #8a7040; font-size: 10px; }
+    .flow-storage-row code { overflow: hidden; color: #604d2b; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .flow-timeline { position: relative; display: grid; gap: 16px; margin-top: 25px; padding-left: 58px; }
+    .flow-timeline::before { content: ""; position: absolute; top: 22px; bottom: 22px; left: 22px; width: 2px; background: #dfe3e8; }
+    .flow-node { position: relative; padding: 15px 17px; border: 1px solid #e0e3e8; border-left: 5px solid #929aa7; border-radius: 14px; background: #fff; box-shadow: 0 6px 20px rgba(37,49,67,.045); }
+    .flow-node.tool_call { border-left-color: #4d73ee; }.flow-node.tool_output { border-left-color: #7359c7; }
+    .flow-node.assistant { border-left-color: var(--orange); }.flow-node.turn { border-left-color: #929aa7; }
+    .flow-index { position: absolute; top: 13px; left: -61px; display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid #929aa7; border-radius: 50%; background: var(--paper); color: #687383; font-size: 11px; font-weight: 750; z-index: 1; }
+    .tool_call .flow-index, .tool_output .flow-index { border-color: #4d73ee; color: #315bd4; }
+    .assistant .flow-index { border-color: var(--orange); color: var(--orange-dark); }
+    .flow-node-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .flow-node h3 { margin: 0; font-size: 13px; }.flow-tags { display: flex; gap: 6px; color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .flow-detail { overflow-x: auto; max-height: 220px; margin: 8px 0 0; color: var(--ink-soft); font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+    .flow-empty { padding: 80px 20px; color: var(--muted); text-align: center; }
+
+    .composer-dock {
+      position: absolute; right: 0; bottom: 0; left: 276px; padding: 44px 24px 16px;
+      background: linear-gradient(transparent, var(--paper) 35%);
+    }
+    .composer-wrap { width: min(840px, 100%); margin: 0 auto; }
+    form {
+      display: flex; align-items: flex-end; gap: 10px; min-height: 64px; padding: 10px 10px 10px 12px;
+      border: 1px solid #dcd4c8; border-radius: 20px; background: #fff; box-shadow: var(--shadow);
+    }
+    .input-stack { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: flex-end; }
+    .image-previews { display: flex; flex-wrap: wrap; gap: 8px; }
+    .image-previews:empty { display: none; }
+    .image-preview { position: relative; width: 68px; height: 68px; margin-bottom: 5px; }
+    .image-preview img { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 11px; object-fit: cover; }
+    .image-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: var(--ink); color: #fff; font: 14px/16px var(--font); cursor: pointer; }
+    .attach-button { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; margin-bottom: 2px; border: 0; border-radius: 11px; background: #f2eee7; color: var(--ink-soft); cursor: pointer; }
+    .attach-button:hover { background: var(--orange-soft); color: var(--orange-dark); }
+    .attach-button svg { width: 19px; height: 19px; }
+    textarea {
+      display: block; width: 100%; min-height: 42px; max-height: 170px; resize: none; overflow-y: auto;
+      padding: 10px 2px 6px; border: 0; outline: 0; background: transparent; color: var(--ink); line-height: 1.55;
+    }
+    textarea::placeholder { color: #a4abb5; }
+    .send-button {
+      display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; margin: 0 3px 3px 0;
+      border: 0; border-radius: 50%; background: #202020; color: #fff; cursor: pointer;
+      box-shadow: none; transition: background .15s ease, transform .15s ease, opacity .15s ease;
+    }
+    .send-button:hover { background: #000; transform: scale(1.04); }
+    .send-button.stop { background: #202020; }
+    .send-button:disabled { opacity: .48; cursor: wait; transform: none; }
+    .send-button svg { width: 18px; height: 18px; }
+    .composer-meta { display: flex; justify-content: space-between; padding: 8px 8px 0; color: var(--muted); font-size: 10px; }
+    .composer-meta strong { color: var(--orange-dark); font-weight: 650; }
+
+    @media (max-width: 820px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .composer-dock { left: 0; }
+      .topbar { padding: 0 18px; }
+      #messages { width: calc(100% - 28px); padding-top: 25px; }
+      .prompt-grid { grid-template-columns: 1fr; }
+      .welcome { padding-top: 10px; }
+      .message { max-width: 94%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="项目导航">
+      <button id="home-brand" class="brand" type="button" aria-label="返回首页">
+        <img class="brand-logo" src="/lobster-logo.png" alt="虾哥不加班 Logo">
+        <div class="brand-copy"><strong>LOB Codex</strong><span>用 Go 读懂 Codex Harness</span></div>
+      </button>
+
+      <div class="mode-switch" role="tablist" aria-label="使用模式">
+        <button class="mode-button active" type="button" data-mode="work" role="tab" aria-selected="true">工作模式</button>
+        <button class="mode-button" type="button" data-mode="learning" role="tab" aria-selected="false">学习模式</button>
+      </div>
+
+      <button id="new-conversation" class="new-chat-primary work-only" type="button">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 19l3.5-.8L18 8.7a2.1 2.1 0 0 0-3-3l-9.5 9.5L5 19Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 7.2l3.3 3.3" stroke="currentColor" stroke-width="1.8"/></svg>
+        新对话
+      </button>
+
+      <div class="thread-header work-only"><p class="section-label">项目</p><button id="new-thread" class="new-thread" type="button">＋ 添加</button></div>
+      <div id="thread-list" class="thread-list work-only"></div>
+
+      <p class="section-label learning-only is-hidden">当前学习主链</p>
+      <nav class="concept-list learning-only is-hidden">
+        <button class="concept active" type="button" data-topic="Session / Turn / Step"><span class="concept-index">01</span><span>Session / Turn / Step</span></button>
+        <button class="concept" type="button" data-topic="Conversation History"><span class="concept-index">02</span><span>Conversation History</span></button>
+        <button class="concept" type="button" data-topic="Tool Router"><span class="concept-index">03</span><span>Tool Router</span></button>
+        <button class="concept" type="button" data-topic="Approval & Sandbox"><span class="concept-index">04</span><span>Approval & Sandbox</span></button>
+        <button class="concept" type="button" data-topic="MCP & Plugins"><span class="concept-index">05</span><span>MCP & Plugins</span></button>
+      </nav>
+
+      <div class="sidebar-bottom learning-only is-hidden">
+        <p class="social-title">关注「虾哥不加班」</p>
+        <div class="social-grid">
+          <button class="social-card" type="button" data-qr="wechat">
+            <img src="/wechat-official-qr.jpg" alt="微信公众号二维码缩略图">
+            <strong>微信公众号</strong>
+          </button>
+          <button class="social-card douyin" type="button" data-qr="douyin">
+            <img src="/douyin-qr-cropped.png" alt="抖音二维码缩略图">
+            <strong>抖音</strong>
+          </button>
+        </div>
+        <a class="repo-link" href="https://github.com/lobster-bujiaban/lob-codex" target="_blank" rel="noreferrer">github.com/lobster-bujiaban/lob-codex</a>
+      </div>
+    </aside>
+
+    <section class="stage">
+      <header class="topbar">
+        <div class="page-title"><span id="workspace-path">原理实验台 / 当前工作区</span><strong id="page-topic">Session / Turn / Step</strong></div>
+        <div class="topbar-actions">
+          <div class="view-switch" role="tablist" aria-label="对话视图">
+            <button class="view-button active" type="button" data-view="conversation" role="tab" aria-selected="true">对话</button>
+            <button class="view-button" type="button" data-view="flow" role="tab" aria-selected="false">流程</button>
+          </div>
+          <button id="extensions-button" class="extensions-button" type="button">扩展</button>
+          <div class="status-pill"><span class="status-dot"></span>Responses API 已连接</div>
+        </div>
+      </header>
+
+      <main class="conversation">
+        <section id="messages" aria-live="polite">
+          <div class="welcome">
+            <img class="welcome-logo" src="/lobster-logo.png" alt="">
+            <h1>不只看源码，把 Codex 跑明白</h1>
+            <p>这是 LOB Codex 原理实验台。每一步都对应 Codex 源码中的真实模块、状态机和事件生命周期。</p>
+            <div class="prompt-grid">
+              <button class="prompt-chip" type="button" data-prompt="用通俗语言解释 Codex 的 Session、Turn 和 Step 分别负责什么？"><span>主链</span>解释 Session、Turn 和 Step</button>
+              <button class="prompt-chip" type="button" data-prompt="为什么 Codex 的 StepContext 是内部快照，而不是公开事件？"><span>关键设计</span>为什么 Step 不是公开事件</button>
+              <button class="prompt-chip" type="button" data-prompt="从 Submission 开始，描述一次 Codex 请求如何走到 TurnComplete。"><span>完整流程</span>从 Submission 到 TurnComplete</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <main id="flow-view" class="flow-view is-hidden" aria-live="polite">
+        <div class="flow-shell">
+          <section id="flow-summary" class="flow-summary"></section>
+          <section id="flow-timeline" class="flow-timeline"></section>
+        </div>
+      </main>
+
+      <div id="composer-dock" class="composer-dock">
+        <div class="composer-wrap">
+          <form id="chat-form">
+            <input id="image-picker" type="file" accept="image/*" multiple hidden>
+            <button id="attach-image" class="attach-button" type="button" aria-label="添加图片" title="添加或粘贴图片">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <div class="input-stack">
+              <div id="image-previews" class="image-previews" aria-live="polite"></div>
+              <textarea id="prompt" rows="1" placeholder="问一个关于 Codex Harness 的问题…"></textarea>
+            </div>
+            <button id="send" class="send-button" type="submit" aria-label="发送消息">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </form>
+          <div class="composer-meta"><span><strong>LOB Codex</strong> · Go 等价实现</span><span>Enter 发送 · Shift + Enter 换行</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="qr-dialog" class="qr-dialog">
+    <div class="qr-dialog-inner">
+      <button id="qr-dialog-close" class="qr-dialog-close" type="button" aria-label="关闭">×</button>
+      <h2 id="qr-dialog-title"></h2>
+      <p id="qr-dialog-description"></p>
+      <img id="qr-dialog-image" src="" alt="">
+    </div>
+  </dialog>
+
+  <dialog id="extensions-dialog" class="qr-dialog extensions-dialog">
+    <div class="extensions-shell">
+      <button id="extensions-close" class="qr-dialog-close" type="button" aria-label="关闭">×</button>
+      <h2>Skills、插件与 MCP</h2>
+      <p>显示当前 Thread 实际加载的扩展及失败原因。</p>
+      <div class="extensions-actions"><button id="extensions-refresh" class="primary" type="button">重新扫描并连接</button></div>
+      <div id="extensions-status" class="extensions-status" aria-live="polite"></div>
+      <div id="extensions-content">正在读取扩展状态…</div>
+    </div>
+  </dialog>
+
+  <dialog id="workspace-dialog" class="qr-dialog workspace-dialog">
+    <form id="workspace-form">
+      <h2>新建工作区对话</h2>
+      <p>选择一个本地文件夹，新的 Thread、Session 和工具调用都会绑定到该工作区。</p>
+      <div class="workspace-field">
+        <input id="workspace-input" type="text" aria-label="工作区绝对路径" placeholder="/Users/name/project" required>
+        <button id="workspace-browse" type="button">选择文件夹</button>
+      </div>
+      <div id="workspace-error" class="workspace-error"></div>
+      <div class="workspace-actions">
+        <button id="workspace-cancel" type="button">取消</button>
+        <button class="primary" type="submit">创建对话</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const form = document.querySelector('#chat-form');
+    const prompt = document.querySelector('#prompt');
+    const send = document.querySelector('#send');
+    const imagePicker = document.querySelector('#image-picker');
+    const imagePreviews = document.querySelector('#image-previews');
+    const messages = document.querySelector('#messages');
+    const welcomeTemplate = messages.querySelector('.welcome').cloneNode(true);
+    const pageTopic = document.querySelector('#page-topic');
+    const workspacePath = document.querySelector('#workspace-path');
+    const threadList = document.querySelector('#thread-list');
+    const workspaceDialog = document.querySelector('#workspace-dialog');
+    const extensionsDialog = document.querySelector('#extensions-dialog');
+    const extensionsContent = document.querySelector('#extensions-content');
+    const extensionsStatus = document.querySelector('#extensions-status');
+    const workspaceForm = document.querySelector('#workspace-form');
+    const workspaceInput = document.querySelector('#workspace-input');
+    const workspaceError = document.querySelector('#workspace-error');
+    const conversationView = document.querySelector('.conversation');
+    const flowView = document.querySelector('#flow-view');
+    const flowSummary = document.querySelector('#flow-summary');
+    const flowTimeline = document.querySelector('#flow-timeline');
+    const composerDock = document.querySelector('#composer-dock');
+    let activeThreadID = 'current-workspace';
+    let activeMode = 'work';
+    let activeView = 'conversation';
+    let pendingImages = [];
+    let threads = [];
+    const topicProfiles = {
+      'Session / Turn / Step': {
+        title: '不只看源码，把 Codex 跑明白',
+        description: '从长生命周期 Session 到单次 Turn，再到内部 Step 快照，先看懂 Codex Harness 的调度骨架。',
+        prompts: [
+          ['主链', '解释 Session、Turn 和 Step', '用通俗语言解释 Codex 的 Session、Turn 和 Step 分别负责什么？'],
+          ['关键设计', '为什么 Step 不是公开事件', '为什么 Codex 的 StepContext 是内部快照，而不是公开事件？'],
+          ['完整流程', '从 Submission 到 TurnComplete', '从 Submission 开始，描述一次 Codex 请求如何走到 TurnComplete。']
+        ]
+      },
+      'Conversation History': {
+        title: '多轮对话，靠的不是字符串拼接',
+        description: '理解 ResponseItem 如何进入会话历史，以及每个 Step 如何从同一事实序列构造模型输入。',
+        prompts: [
+          ['核心顺序', '输入何时写进 History', 'Codex 为什么在模型采样前，先把用户输入写入 Conversation History？'],
+          ['请求快照', 'ForPrompt 做了什么', 'ConversationHistory.ForPrompt 为什么要返回快照？它和 Session 内的原始历史有什么区别？'],
+          ['多轮上下文', '回答如何进入下一轮', '从 OutputItemDone 开始，解释助手回答如何回写 History 并成为下一轮上下文。']
+        ]
+      },
+      'Tool Router': {
+        title: '模型不会直接执行工具',
+        description: '从模型输出 Tool Call，到路由、执行、结果回写和再次采样，拆开 Agent Tool Loop。',
+        prompts: [
+          ['运行演示', '调用 echo 跑一次 Tool Loop', '请调用 echo 工具回显“LOB Codex Tool Loop”，再根据工具结果告诉我完整调用流程。'],
+          ['工作区读取', '用 exec_command 列出文件', '请使用 exec_command 的 rg --files 列出当前工作区文件，并概括项目结构。'],
+          ['循环机制', '为什么需要再次采样', '工具执行结果写回 Conversation History 后，Codex 为什么还要启动下一次 Step？']
+        ]
+      },
+      'Approval & Sandbox': {
+        title: '能执行，不等于可以直接执行',
+        description: '理解工具调用如何经过审批策略与沙箱边界，再安全地落到真实工作区。',
+        prompts: [
+          ['运行演示', '发起一次命令审批', '请执行审批演示，调用 exec_command 运行“pwd; echo approval-demo”，等待我批准或拒绝后再解释结果。'],
+          ['PTY 终端', '运行交互式 PTY 演示', '请运行 PTY 演示，通过 tty 模式启动交互命令，再用 write_stdin 输入内容直到完成。'],
+          ['会话规则', '演示本会话批准缓存', '请运行会话规则演示，调用 exec_command 执行 go version，并让我选择本会话批准。']
+        ]
+      },
+      'MCP & Plugins': {
+        title: '把外部能力接入同一条工具主链',
+        description: 'MCP 和插件扩展工具来源，但仍复用 Codex 的注册、路由、审批与结果回传机制。',
+        prompts: [
+          ['能力发现', 'MCP 工具如何进入 Codex', 'Codex 如何连接 MCP Server 并把远程工具加入当前可用工具集合？'],
+          ['动态更新', '工具列表如何刷新', '当 MCP 工具发生变化时，Codex 如何刷新工具而不破坏当前 Session？'],
+          ['插件关系', 'Plugin、Skill 与 MCP 的区别', '用通俗语言解释 Codex 中 Plugin、Skill 和 MCP 分别解决什么问题。']
+        ]
+      }
+    };
+    let activeRequest;
+    let activeTurnID = '';
+    let interrupting = false;
+    const sendIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>';
+
+    function updateComposerAction() {
+      const shouldStop = Boolean(activeRequest) && !prompt.value.trim() && !pendingImages.length;
+      send.classList.toggle('stop', shouldStop);
+      send.innerHTML = shouldStop ? stopIcon : sendIcon;
+      send.setAttribute('aria-label', shouldStop ? '中断当前任务' : (activeRequest ? '引导当前任务' : '发送消息'));
+      send.title = shouldStop ? '中断' : (activeRequest ? '引导当前任务' : '发送');
+    }
+
+    const workProfile = {
+      title: '准备好一起完成工作',
+      description: '选择一个工作区，直接让 LOB Codex 阅读代码、修改文件或执行命令。',
+      prompts: [
+        ['了解项目', '分析当前项目结构', '请分析当前项目结构，并告诉我最值得先关注的模块。'],
+        ['继续开发', '找出下一步任务', '请结合当前代码和文档，判断下一步最应该实现什么。'],
+        ['检查改动', '查看工作区状态', '请检查当前工作区改动，并指出需要关注的问题。']
+      ]
+    };
+
+    function createWelcome(topic) {
+      const profile = activeMode === 'work'
+        ? workProfile
+        : (topicProfiles[topic] || topicProfiles['Session / Turn / Step']);
+      const welcome = welcomeTemplate.cloneNode(true);
+      welcome.querySelector('h1').textContent = profile.title;
+      welcome.querySelector('p').textContent = profile.description;
+      welcome.querySelectorAll('.prompt-chip').forEach((button, index) => {
+        const [label, title, question] = profile.prompts[index];
+        const labelElement = document.createElement('span');
+        labelElement.textContent = label;
+        button.replaceChildren(labelElement, document.createTextNode(title));
+        button.dataset.prompt = question;
+      });
+      return welcome;
+    }
+
+    function bindPromptChips(root = document) {
+      root.querySelectorAll('.prompt-chip').forEach((button) => {
+        button.addEventListener('click', () => submitPrompt(button.dataset.prompt));
+      });
+    }
+
+    function showHome(topic = 'Session / Turn / Step') {
+      activeRequest?.abort();
+      activeRequest = undefined;
+      activeTurnID = '';
+      interrupting = false;
+      messages.replaceChildren(createWelcome(topic));
+      bindPromptChips(messages);
+      prompt.value = '';
+      pendingImages = [];
+      renderImagePreviews();
+      prompt.style.height = '';
+      send.disabled = false;
+      updateComposerAction();
+      pageTopic.textContent = activeMode === 'work' ? '工作模式' : topic;
+      document.querySelectorAll('.concept').forEach((button) => {
+        button.classList.toggle('active', button.dataset.topic === topic);
+      });
+      document.querySelector('.conversation').scrollTop = 0;
+      prompt.focus();
+    }
+
+    function setMode(mode) {
+      if (mode !== 'work' && mode !== 'learning') return;
+      activeMode = mode;
+      document.body.dataset.modeView = mode;
+      document.querySelectorAll('.mode-button').forEach((button) => {
+        const active = button.dataset.mode === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      document.querySelectorAll('.learning-only').forEach((element) => {
+        element.classList.toggle('is-hidden', mode !== 'learning');
+      });
+      document.querySelectorAll('.work-only').forEach((element) => {
+        element.classList.toggle('is-hidden', mode !== 'work');
+      });
+      prompt.placeholder = mode === 'learning'
+        ? '问一个关于 Codex Harness 的问题…'
+        : '描述你想在当前工作区完成的任务…';
+      renderThreads();
+      showHome();
+    }
+
+    function renderThreads() {
+      threadList.replaceChildren();
+      const groups = new Map();
+      threads.forEach((thread) => {
+        if (!groups.has(thread.workspace_root)) groups.set(thread.workspace_root, []);
+        groups.get(thread.workspace_root).push(thread);
+      });
+      groups.forEach((workspaceThreads, workspaceRoot) => {
+        const group = document.createElement('section');
+        group.className = 'workspace-group';
+        const head = document.createElement('div');
+        head.className = 'workspace-group-head';
+        const name = document.createElement('div');
+        name.className = 'workspace-group-name';
+        const strong = document.createElement('strong');
+        strong.textContent = workspaceRoot.split('/').filter(Boolean).pop() || workspaceRoot;
+        const path = document.createElement('span');
+        path.textContent = workspaceRoot;
+        const folder = document.createElement('span');
+        folder.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M3.5 7.5h6l2-2h3.5a3 3 0 0 1 3 3v1H6a3 3 0 0 0-3 3V8a.5.5 0 0 1 .5-.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 9.5h14.5l-2 8a2 2 0 0 1-2 1.5H4.5a1.5 1.5 0 0 1-1.45-1.9l1.5-5.5A2 2 0 0 1 6 9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+        name.append(folder.firstElementChild, strong, path);
+        const actions = document.createElement('div');
+        actions.className = 'workspace-group-actions';
+        const more = document.createElement('button');
+        more.className = 'workspace-action';
+        more.type = 'button';
+        more.title = '项目菜单';
+        more.setAttribute('aria-label', '打开项目菜单');
+        more.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+        const menu = document.createElement('div');
+        menu.className = 'workspace-menu is-hidden';
+        const create = document.createElement('button');
+        create.type = 'button';
+        create.textContent = '新建对话';
+        create.addEventListener('click', () => submitThread(workspaceRoot, false));
+        menu.append(create);
+        const remove = document.createElement('button');
+        remove.className = 'danger';
+        remove.type = 'button';
+        remove.textContent = '删除工作区';
+        remove.addEventListener('click', () => removeWorkspace(workspaceRoot));
+        menu.append(remove);
+        more.addEventListener('click', (event) => {
+          event.stopPropagation();
+          document.querySelectorAll('.workspace-menu').forEach((other) => {
+            if (other !== menu) other.classList.add('is-hidden');
+          });
+          menu.classList.toggle('is-hidden');
+        });
+        menu.addEventListener('click', (event) => event.stopPropagation());
+        actions.append(more, createDeleteButton('删除工作区', () => removeWorkspace(workspaceRoot)), menu);
+        head.append(name, actions);
+        const conversations = document.createElement('div');
+        conversations.className = 'workspace-threads';
+        workspaceThreads.forEach((thread, index) => {
+          const row = document.createElement('div');
+          row.className = 'thread-row';
+          const button = document.createElement('button');
+          button.className = `thread-item${thread.id === activeThreadID ? ' active' : ''}`;
+          button.type = 'button';
+          const label = document.createElement('strong');
+          label.textContent = thread.title || (thread.id === 'current-workspace' ? '新对话' : `新对话 ${workspaceThreads.length - index}`);
+          const created = document.createElement('span');
+          created.textContent = thread.created_at_ms
+            ? new Date(thread.created_at_ms).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+            : '应用启动工作区';
+          button.append(label, created);
+          button.addEventListener('click', () => selectThread(thread.id));
+          row.append(button, createDeleteButton('删除对话', () => removeThread(thread.id)));
+          conversations.append(row);
+        });
+        group.append(head, conversations);
+        threadList.append(group);
+      });
+      const active = threads.find((thread) => thread.id === activeThreadID);
+      workspacePath.textContent = activeMode === 'learning'
+        ? '学习模式 / Codex Harness'
+        : (active ? `工作区 / ${active.workspace_root}` : '工作区缺失');
+    }
+
+    async function selectThread(threadID) {
+      activeRequest?.abort();
+      activeThreadID = threadID;
+      renderThreads();
+      showHome();
+      if (activeView === 'flow') {
+        await loadFlow(threadID);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}/history`);
+        if (!response.ok) throw new Error(await response.text());
+        if (activeThreadID !== threadID) return;
+        renderHistory((await response.json()).items || []);
+      } catch (error) {
+        if (activeThreadID !== threadID) return;
+        const message = addMessage('assistant');
+        message.row.classList.add('error');
+        message.bubble.textContent = `恢复历史失败：${error.message}`;
+      }
+    }
+
+    function formatDuration(durationMS) {
+      if (durationMS < 1000) return `${durationMS}ms`;
+      if (durationMS < 60000) return `${(durationMS / 1000).toFixed(1)}s`;
+      return `${Math.floor(durationMS / 60000)}m ${Math.round((durationMS % 60000) / 1000)}s`;
+    }
+
+    function renderFlow(data) {
+      const summary = data.summary || {};
+      flowSummary.replaceChildren();
+      const title = document.createElement('h2');
+      title.textContent = '运行时流程概览';
+      const metrics = document.createElement('div');
+      metrics.className = 'flow-metrics';
+      [
+        `${summary.turns || 0} 个 Turn`, `${summary.model_calls || 0} 次模型调用`,
+        `${summary.tool_calls || 0} 次工具调用`, `输入${summary.usage_exact ? ' ' : '约 '}${summary.input_tokens || 0} Token`,
+        `输出${summary.usage_exact ? ' ' : '约 '}${summary.output_tokens || 0} Token`, `总耗时 ${formatDuration(summary.duration_ms || 0)}`
+      ].forEach((value) => {
+        const metric = document.createElement('span');
+        metric.className = 'flow-metric';
+        metric.textContent = value;
+        metrics.append(metric);
+      });
+      const hint = document.createElement('p');
+      hint.className = 'flow-hint';
+      hint.textContent = '会话级流程，基于当前 Thread 的 canonical rollout 重建；Token 为按字节估算值。';
+      const storage = document.createElement('div');
+      storage.className = 'flow-storage';
+      [
+        ['工作区目录', data.workspace_root || '—'],
+        ['会话存储', data.storage_path || '—'],
+        ['Thread ID', data.thread_id || activeThreadID]
+      ].forEach(([label, value]) => {
+        const row = document.createElement('div');
+        row.className = 'flow-storage-row';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const path = document.createElement('code');
+        path.textContent = value;
+        path.title = value;
+        row.append(name, path);
+        storage.append(row);
+      });
+      flowSummary.append(title, metrics, hint, storage);
+
+      flowTimeline.replaceChildren();
+      const events = data.events || [];
+      if (!events.length) {
+        const empty = document.createElement('div');
+        empty.className = 'flow-empty';
+        empty.textContent = '当前对话还没有可展示的运行记录';
+        flowTimeline.append(empty);
+        return;
+      }
+      events.forEach((event, index) => {
+        const node = document.createElement('article');
+        node.className = `flow-node ${event.kind}`;
+        const number = document.createElement('span');
+        number.className = 'flow-index';
+        number.textContent = index + 1;
+        const head = document.createElement('div');
+        head.className = 'flow-node-head';
+        const title = document.createElement('h3');
+        title.textContent = event.name ? `${event.title} · ${event.name}` : event.title;
+        const tags = document.createElement('div');
+        tags.className = 'flow-tags';
+        const parts = [`Turn ${event.turn}`];
+        if (event.step) parts.push(`Step ${event.step}`);
+        parts.push(`#${event.ordinal}`);
+        tags.textContent = parts.join(' · ');
+        head.append(title, tags);
+        node.append(number, head);
+        if (event.detail) {
+          const detail = document.createElement('pre');
+          detail.className = 'flow-detail';
+          detail.textContent = event.detail;
+          node.append(detail);
+        }
+        flowTimeline.append(node);
+      });
+    }
+
+    async function loadFlow(threadID = activeThreadID) {
+      flowTimeline.replaceChildren();
+      const loading = document.createElement('div');
+      loading.className = 'flow-empty';
+      loading.textContent = '正在重建运行时流程…';
+      flowTimeline.append(loading);
+      const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}/flow`);
+      if (!response.ok) throw new Error(await response.text());
+      if (activeThreadID === threadID && activeView === 'flow') renderFlow(await response.json());
+    }
+
+    async function setView(view) {
+      if (view !== 'conversation' && view !== 'flow') return;
+      activeView = view;
+      document.querySelectorAll('.view-button').forEach((button) => {
+        const active = button.dataset.view === view;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      conversationView.classList.toggle('is-hidden', view !== 'conversation');
+      composerDock.classList.toggle('is-hidden', view !== 'conversation');
+      flowView.classList.toggle('is-hidden', view !== 'flow');
+      if (view === 'flow') {
+        try {
+          await loadFlow();
+        } catch (error) {
+          flowTimeline.innerHTML = '';
+          const failed = document.createElement('div');
+          failed.className = 'flow-empty';
+          failed.textContent = `流程加载失败：${error.message}`;
+          flowTimeline.append(failed);
+        }
+      }
+    }
+
+    async function loadThreads() {
+      const response = await fetch('/api/threads');
+      if (!response.ok) throw new Error(await response.text());
+      threads = (await response.json()).threads;
+      if (!threads.some((thread) => thread.id === activeThreadID)) activeThreadID = threads[0]?.id;
+      renderThreads();
+    }
+
+    function renderExtensions(inventory) {
+      extensionsContent.replaceChildren();
+      const appendActions = (row, buttons) => {
+        if (!buttons.length) return;
+        const actions = document.createElement('div');
+        actions.className = 'extension-actions';
+        buttons.forEach((button) => actions.append(button));
+        row.append(actions);
+      };
+      const sections = [
+        ['MCP Servers', inventory.mcp_servers || [], (server) => {
+          const tools = (server.tools || []).map((tool) => tool.name).join('、');
+          const buttons = [];
+          if (server.needs_auth || server.state === 'oauth_required') {
+            const login = document.createElement('button');
+            login.type = 'button';
+            login.textContent = 'OAuth 登录';
+            login.addEventListener('click', async () => {
+              login.disabled = true;
+              const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/mcp/${encodeURIComponent(server.name)}/oauth/login`, { method: 'POST' });
+              if (!response.ok) { login.textContent = `失败：${await response.text()}`; login.disabled = false; return; }
+              const payload = await response.json();
+              if (payload.authorization_url) window.open(payload.authorization_url, '_blank');
+              login.textContent = '已打开登录页，完成后点刷新';
+            });
+            buttons.push(login);
+          }
+          return { name: server.name, state: server.state, meta: server.source_path, detail: tools ? `工具：${tools}` : '', error: server.error, buttons };
+        }],
+        ['插件', inventory.plugins || [], (plugin) => {
+          const name = plugin.Name || plugin.name;
+          const enabled = plugin.Enabled !== false && plugin.enabled !== false;
+          const buttons = [];
+          const toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.textContent = enabled ? '禁用' : '启用';
+          toggle.addEventListener('click', async () => {
+            toggle.disabled = true;
+            const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/plugins/${encodeURIComponent(name)}/enabled`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !enabled })
+            });
+            if (!response.ok) { toggle.textContent = `失败：${await response.text()}`; toggle.disabled = false; return; }
+            await loadExtensions();
+          });
+          buttons.push(toggle);
+          if ((plugin.Source || plugin.source) === 'marketplace') {
+            const uninstall = document.createElement('button');
+            uninstall.className = 'danger';
+            uninstall.type = 'button';
+            uninstall.textContent = '卸载';
+            uninstall.addEventListener('click', async () => {
+              if (!confirm(`卸载插件 ${name}？`)) return;
+              uninstall.disabled = true;
+              const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/plugins/${encodeURIComponent(name)}`, { method: 'DELETE' });
+              if (!response.ok) { uninstall.textContent = `失败：${await response.text()}`; uninstall.disabled = false; return; }
+              await loadExtensions();
+            });
+            buttons.push(uninstall);
+          }
+          const extras = [];
+          (plugin.hooks || []).forEach((hook) => extras.push(`hook:${hook.event}`));
+          (plugin.apps || []).forEach((app) => extras.push(`app:${app.name}`));
+          (plugin.commands || []).forEach((command) => extras.push(`cmd:${command.name}`));
+          (plugin.agents || []).forEach((agent) => extras.push(`agent:${agent.name}`));
+          const skills = (inventory.skills || []).filter((skill) => {
+            const skillName = skill.Name || skill.name || '';
+            return skillName.startsWith(`${name}:`);
+          });
+          const details = [];
+          const description = plugin.Description || plugin.description;
+          if (description) details.push(`功能：${description}`);
+          skills.forEach((skill) => {
+            const skillName = skill.Name || skill.name;
+            const skillDescription = skill.Description || skill.description;
+            details.push(`${skillDescription ? `Skill：${skillDescription}\n` : ''}调用：$${skillName}`);
+          });
+          if (!enabled) details.push('插件已禁用，启用后可调用。');
+          if (extras.length) details.push(`其他贡献：${extras.join(' · ')}`);
+          return { name, state: enabled ? 'ready' : 'disabled', meta: plugin.Path || plugin.path, detail: details.join('\n'), buttons };
+        }],
+        ['Skills', inventory.skills || [], (skill) => {
+          const name = skill.Name || skill.name;
+          const description = skill.Description || skill.description;
+          return { name, state: 'ready', meta: skill.Path || skill.path, detail: [`功能：${description || '按 Skill 指令执行任务'}`, `调用：$${name}`].join('\n'), buttons: [] };
+        }],
+        ['Hooks', inventory.hooks || [], (hook) => ({ name: hook.event, state: hook.type || 'command', meta: hook.path, detail: hook.command, buttons: [] })],
+        ['Apps', inventory.apps || [], (app) => ({ name: app.name, state: 'ready', meta: app.path, detail: app.description, buttons: [] })],
+        ['Commands', inventory.commands || [], (command) => ({ name: command.name, state: 'ready', meta: command.path, detail: command.description, buttons: [] })],
+        ['Agents', inventory.agents || [], (agent) => ({ name: agent.name, state: 'ready', meta: agent.path, detail: agent.description, buttons: [] })]
+      ];
+      sections.forEach(([title, items, normalize]) => {
+        const section = document.createElement('section');
+        section.className = 'extensions-section';
+        const heading = document.createElement('h3');
+        heading.textContent = `${title} · ${items.length}`;
+        const list = document.createElement('div');
+        list.className = 'extension-list';
+        if (!items.length) {
+          const empty = document.createElement('div');
+          empty.className = 'extension-item';
+          empty.textContent = '未发现';
+          list.append(empty);
+        }
+        items.forEach((raw) => {
+          const item = normalize(raw);
+          const row = document.createElement('div');
+          row.className = 'extension-item';
+          const head = document.createElement('div');
+          head.className = 'extension-head';
+          const name = document.createElement('span');
+          name.className = 'extension-name';
+          name.textContent = item.name;
+          const state = document.createElement('span');
+          state.className = `extension-state ${item.state}`;
+          state.textContent = item.state;
+          head.append(name, state);
+          row.append(head);
+          if (item.meta) {
+            const meta = document.createElement('div');
+            meta.className = 'extension-meta';
+            meta.textContent = item.meta;
+            row.append(meta);
+          }
+          if (item.detail) {
+            const detail = document.createElement('div');
+            detail.className = 'extension-tools';
+            detail.textContent = item.detail;
+            row.append(detail);
+          }
+          if (item.error) {
+            const error = document.createElement('div');
+            error.className = 'extension-error';
+            error.textContent = item.error;
+            row.append(error);
+          }
+          appendActions(row, item.buttons || []);
+          list.append(row);
+        });
+        section.append(heading, list);
+        extensionsContent.append(section);
+      });
+      loadMarketplace(inventory);
+    }
+
+    async function loadMarketplace() {
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/marketplace`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        const section = document.createElement('section');
+        section.className = 'extensions-section';
+        const heading = document.createElement('h3');
+        const entries = (payload.marketplaces || []).flatMap((marketplace) => (marketplace.plugins || []).map((plugin) => ({ ...plugin, marketplace: marketplace.display_name || marketplace.name, marketplace_path: marketplace.path })));
+        heading.textContent = `Marketplace · ${entries.length}`;
+        const list = document.createElement('div');
+        list.className = 'extension-list';
+        if (!entries.length) {
+          const empty = document.createElement('div');
+          empty.className = 'extension-item';
+          empty.textContent = '未发现 marketplace.json';
+          list.append(empty);
+        }
+        entries.forEach((entry) => {
+          const row = document.createElement('div');
+          row.className = 'extension-item';
+          const head = document.createElement('div');
+          head.className = 'extension-head';
+          const name = document.createElement('span');
+          name.className = 'extension-name';
+          name.textContent = entry.name;
+          const state = document.createElement('span');
+          state.className = `extension-state ${entry.installed ? 'ready' : 'disabled'}`;
+          state.textContent = entry.installed ? 'installed' : 'available';
+          head.append(name, state);
+          row.append(head);
+          const meta = document.createElement('div');
+          meta.className = 'extension-meta';
+          meta.textContent = `${entry.marketplace || ''} · ${entry.path || ''}`;
+          row.append(meta);
+          if (!entry.installed) {
+            const install = document.createElement('button');
+            install.type = 'button';
+            install.textContent = '安装';
+            install.addEventListener('click', async () => {
+              install.disabled = true;
+              const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/plugins/install`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ marketplace_path: entry.marketplace_path, plugin_name: entry.name })
+              });
+              if (!response.ok) { install.textContent = `失败：${await response.text()}`; install.disabled = false; return; }
+              await loadExtensions();
+            });
+            const actions = document.createElement('div');
+            actions.className = 'extension-actions';
+            actions.append(install);
+            row.append(actions);
+          }
+          list.append(row);
+        });
+        section.append(heading, list);
+        extensionsContent.append(section);
+      } catch (_) {}
+    }
+
+    async function loadExtensions() {
+      extensionsContent.textContent = '正在读取扩展状态…';
+      const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/extensions`);
+      if (!response.ok) throw new Error(await response.text());
+      const inventory = await response.json();
+      renderExtensions(inventory);
+      return inventory;
+    }
+
+    async function showExtensions() {
+      extensionsDialog.showModal();
+      const current = threads.find((thread) => thread.id === activeThreadID);
+      extensionsStatus.className = 'extensions-status';
+      extensionsStatus.textContent = current?.workspace_root ? `工具工作区：${current.workspace_root}` : '';
+      try {
+        const inventory = await loadExtensions();
+        extensionsStatus.textContent = `扩展来源：${inventory.extension_root} · 工具工作区：${inventory.workspace_root}`;
+      } catch (error) { extensionsContent.textContent = `读取失败：${error.message}`; }
+    }
+
+    function createThread() {
+      const current = threads.find((thread) => thread.id === activeThreadID);
+      workspaceInput.value = current?.workspace_root || '';
+      workspaceError.textContent = '';
+      workspaceDialog.showModal();
+      workspaceInput.focus();
+      workspaceInput.select();
+    }
+
+    function newConversation() {
+      const current = threads.find((thread) => thread.id === activeThreadID);
+      if (!current) {
+        createThread();
+        return;
+      }
+      submitThread(current.workspace_root, false);
+    }
+
+    async function submitThread(workspaceRoot, closeDialog = true) {
+      const response = await fetch('/api/threads', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_root: workspaceRoot })
+      });
+      if (!response.ok) {
+        const message = (await response.text()) || `HTTP ${response.status}`;
+        if (closeDialog) workspaceError.textContent = message;
+        else alert(`新建对话失败：${message}`);
+        return;
+      }
+      const thread = await response.json();
+      threads.unshift(thread);
+      if (closeDialog) workspaceDialog.close();
+      selectThread(thread.id);
+    }
+
+    function createDeleteButton(label, onClick) {
+      const button = document.createElement('button');
+      button.className = 'workspace-action danger';
+      button.type = 'button';
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      button.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M8 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1M4 7h16M9 11v6M15 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onClick();
+      });
+      return button;
+    }
+
+    async function removeThread(threadID) {
+      const thread = threads.find((item) => item.id === threadID);
+      const title = thread?.title || '新对话';
+      if (!confirm(`删除对话“${title}”？\n\n只删除会话记录，不会删除工作区文件。`)) return;
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(threadID)}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        if (threadID === 'current-workspace') {
+          if (thread) thread.title = '';
+          await selectThread(threadID);
+          return;
+        }
+        const workspaceRoot = thread?.workspace_root;
+        threads = threads.filter((item) => item.id !== threadID);
+        if (activeThreadID === threadID) {
+          const sameWorkspace = threads.find((item) => item.workspace_root === workspaceRoot);
+          if (sameWorkspace) {
+            await selectThread(sameWorkspace.id);
+          } else if (workspaceRoot) {
+            await submitThread(workspaceRoot, false);
+          } else {
+            activeThreadID = threads[0]?.id || 'current-workspace';
+            await selectThread(activeThreadID);
+          }
+        } else {
+          renderThreads();
+        }
+      } catch (error) {
+        alert(`删除对话失败：${error.message}`);
+      }
+    }
+
+    async function removeWorkspace(workspaceRoot) {
+      if (!confirm(`删除工作区“${workspaceRoot}”下的全部对话？\n\n只删除本应用在 tmp 中保存的会话数据，不会删除项目文件。`)) return;
+      try {
+        const response = await fetch('/api/workspaces', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspace_root: workspaceRoot })
+        });
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        const removedIDs = new Set(threads.filter((thread) => thread.workspace_root === workspaceRoot).map((thread) => thread.id));
+        threads = threads.filter((thread) => thread.workspace_root !== workspaceRoot);
+        if (removedIDs.has(activeThreadID) || !threads.some((thread) => thread.id === activeThreadID)) {
+          const next = threads[0];
+          if (next) {
+            await selectThread(next.id);
+          } else {
+            activeThreadID = 'current-workspace';
+            renderThreads();
+            showHome();
+          }
+        } else {
+          renderThreads();
+        }
+      } catch (error) {
+        alert(`删除工作区失败：${error.message}`);
+      }
+    }
+
+    async function browseWorkspace() {
+      workspaceError.textContent = '正在打开文件夹选择器…';
+      const response = await fetch('/api/workspaces/select', { method: 'POST' });
+      if (response.status === 204) {
+        workspaceError.textContent = '';
+        return;
+      }
+      if (!response.ok) {
+        workspaceError.textContent = (await response.text()) || `HTTP ${response.status}`;
+        return;
+      }
+      workspaceInput.value = (await response.json()).workspace_root;
+      workspaceError.textContent = '';
+    }
+
+    function removeWelcome() {
+      messages.querySelector('.welcome')?.remove();
+    }
+
+    function escapeHTML(value) {
+      return value.replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[character]);
+    }
+
+    function renderInlineMarkdown(value) {
+      const code = [];
+      let html = escapeHTML(value).replace(/`([^`]+)`/g, (_, content) => {
+        const index = code.push(`<code>${content}</code>`) - 1;
+        return `\u0000CODE${index}\u0000`;
+      });
+      html = html
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+        .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+        .replace(/\u0000CODE(\d+)\u0000/g, (_, index) => code[Number(index)]);
+      return html;
+    }
+
+    function renderMarkdown(source) {
+      const lines = source.replace(/\r\n?/g, '\n').split('\n');
+      const output = [];
+      let paragraph = [];
+      let listType = '';
+      const flushParagraph = () => {
+        if (paragraph.length) output.push(`<p>${paragraph.map(renderInlineMarkdown).join('<br>')}</p>`);
+        paragraph = [];
+      };
+      const closeList = () => {
+        if (listType) output.push(`</${listType}>`);
+        listType = '';
+      };
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        const fence = line.match(/^\s*```([^`]*)$/);
+        if (fence) {
+          flushParagraph(); closeList();
+          const code = [];
+          while (++index < lines.length && !/^\s*```\s*$/.test(lines[index])) code.push(lines[index]);
+          const language = fence[1].trim();
+          output.push(`<pre${language ? ` data-language="${escapeHTML(language)}"` : ''}><code>${escapeHTML(code.join('\n'))}</code></pre>`);
+          continue;
+        }
+        const heading = line.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          flushParagraph(); closeList();
+          const level = heading[1].length;
+          output.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+          continue;
+        }
+        const list = line.match(/^\s*([-*+] |\d+\. )(.+)$/);
+        if (list) {
+          flushParagraph();
+          const nextType = /\d/.test(list[1][0]) ? 'ol' : 'ul';
+          if (listType !== nextType) { closeList(); output.push(`<${nextType}>`); listType = nextType; }
+          output.push(`<li>${renderInlineMarkdown(list[2])}</li>`);
+          continue;
+        }
+        const quote = line.match(/^>\s?(.*)$/);
+        if (quote) {
+          flushParagraph(); closeList();
+          output.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+          continue;
+        }
+        if (!line.trim()) { flushParagraph(); closeList(); continue; }
+        closeList(); paragraph.push(line);
+      }
+      flushParagraph(); closeList();
+      return output.join('');
+    }
+
+    function addMessage(role, text = '', forkItemCount = null) {
+      removeWelcome();
+      const row = document.createElement('div');
+      row.className = `message ${role}`;
+
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      if (role === 'assistant') {
+        const image = document.createElement('img');
+        image.src = '/lobster-logo.png';
+        image.alt = 'LOB Codex';
+        avatar.append(image);
+      } else {
+        avatar.textContent = '你';
+      }
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      if (role === 'assistant') {
+        bubble.classList.add('markdown');
+        bubble.innerHTML = renderMarkdown(text);
+      } else {
+        bubble.textContent = text;
+      }
+      const content = document.createElement('div');
+      content.className = 'message-content';
+      content.append(bubble);
+      if (role === 'assistant') {
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+        const copy = document.createElement('button');
+        copy.className = 'message-action';
+        copy.type = 'button';
+        copy.title = '复制';
+        copy.setAttribute('aria-label', '复制消息');
+        copy.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.8"/></svg>';
+        copy.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(bubble.innerText);
+          copy.title = '已复制';
+          setTimeout(() => { copy.title = '复制'; }, 1200);
+        });
+        const fork = document.createElement('button');
+        fork.className = 'message-action';
+        fork.type = 'button';
+        fork.title = '从这里 Fork';
+        fork.setAttribute('aria-label', '从这条消息创建分支对话');
+        fork.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="6" cy="5" r="2" stroke="currentColor" stroke-width="1.8"/><circle cx="6" cy="19" r="2" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="7" r="2" stroke="currentColor" stroke-width="1.8"/><path d="M6 7v10M8 15h2a8 8 0 0 0 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+        fork.addEventListener('click', async () => {
+          fork.disabled = true;
+          try {
+            const body = forkItemCount === null ? {} : { item_count: forkItemCount };
+            const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/fork`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            });
+            if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+            const thread = await response.json();
+            threads.unshift(thread);
+            await selectThread(thread.id);
+          } catch (error) {
+            fork.disabled = false;
+            fork.title = `Fork 失败：${error.message}`;
+          }
+        });
+        actions.append(copy, fork);
+        content.append(actions);
+      }
+      row.append(avatar, content);
+      messages.append(row);
+      row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return { row, bubble };
+    }
+
+    function addActivity(text = '正在处理…', running = true) {
+      removeWelcome();
+      const row = document.createElement('div');
+      row.className = `activity${running ? ' running' : ''}`;
+      const icon = document.createElement('span');
+      icon.className = 'activity-icon';
+      icon.textContent = '◫';
+      const content = document.createElement('span');
+      content.className = 'activity-text';
+      content.textContent = text;
+      row.append(icon, content);
+      messages.append(row);
+      row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return { row, content };
+    }
+
+    function renderImagePreviews() {
+      imagePreviews.replaceChildren();
+      pendingImages.forEach((imageURL, index) => {
+        const preview = document.createElement('div');
+        preview.className = 'image-preview';
+        const image = document.createElement('img');
+        image.src = imageURL;
+        image.alt = `待发送图片 ${index + 1}`;
+        const remove = document.createElement('button');
+        remove.className = 'image-remove';
+        remove.type = 'button';
+        remove.setAttribute('aria-label', `移除图片 ${index + 1}`);
+        remove.textContent = '×';
+        remove.addEventListener('click', () => {
+          pendingImages.splice(index, 1);
+          renderImagePreviews();
+        });
+        preview.append(image, remove);
+        imagePreviews.append(preview);
+      });
+    }
+
+    function readImageFiles(files) {
+      const available = Math.max(0, 4 - pendingImages.length);
+      [...files].filter((file) => file.type.startsWith('image/')).slice(0, available).forEach((file) => {
+        if (file.size > 8 * 1024 * 1024) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+          pendingImages.push(reader.result);
+          renderImagePreviews();
+        });
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderHistory(items) {
+      if (!items.length) return;
+      messages.replaceChildren();
+      const toolCalls = new Map();
+      items.forEach((item, itemIndex) => {
+        if (item.type === 'message' && (item.role === 'user' || item.role === 'assistant')) {
+          const text = (item.content || []).map((content) => content.text || '').join('');
+          const isProgress = item.role === 'assistant' && items[itemIndex + 1]?.type === 'function_call';
+          const message = isProgress
+            ? { bubble: addActivity(text, false).content }
+            : addMessage(item.role, text, item.role === 'assistant' ? itemIndex + 1 : null);
+          (item.content || []).filter((content) => content.type === 'input_image').forEach((content) => {
+            const image = document.createElement('img');
+            image.src = content.image_url;
+            image.alt = '历史消息图片';
+            image.style.cssText = 'display:block;max-width:280px;max-height:240px;margin-top:8px;border-radius:10px;object-fit:contain';
+            message.bubble.append(image);
+          });
+        } else if (item.type === 'function_call') {
+          addToolCall(toolCalls, {
+            call_id: item.call_id, name: item.name, arguments: item.arguments
+          });
+        } else if (item.type === 'function_call_output') {
+          completeToolCall(toolCalls, {
+            call_id: item.call_id, output: item.output
+          });
+        }
+      });
+      document.querySelector('.conversation').scrollTop = document.querySelector('.conversation').scrollHeight;
+    }
+
+    function addToolCall(toolCalls, event) {
+      removeWelcome();
+      const row = document.createElement('details');
+      row.className = 'tool-call';
+      const header = document.createElement('summary');
+      header.className = 'tool-call-header';
+      const name = document.createElement('span');
+      name.className = 'tool-call-name';
+      name.textContent = `Tool · ${event.name}`;
+      const status = document.createElement('span');
+      status.className = 'tool-call-status';
+      status.textContent = '执行中';
+      const argumentsView = document.createElement('pre');
+      argumentsView.textContent = event.arguments;
+      const body = document.createElement('div');
+      body.className = 'tool-call-body';
+      body.append(argumentsView);
+      header.append(name, status);
+      row.append(header, body);
+      messages.append(row);
+      toolCalls.set(event.call_id, { row, body, status, liveOutput: null });
+      row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function appendExecDelta(toolCalls, event) {
+      const toolCall = toolCalls.get(event.call_id);
+      if (!toolCall) return;
+      if (!toolCall.liveOutput) {
+        toolCall.liveOutput = document.createElement('div');
+        toolCall.liveOutput.className = 'tool-call-output';
+        toolCall.liveOutput.textContent = '实时输出：\n';
+        toolCall.body.append(toolCall.liveOutput);
+      }
+      const bytes = Uint8Array.from(atob(event.chunk), (character) => character.charCodeAt(0));
+      const text = new TextDecoder().decode(bytes);
+      toolCall.liveOutput.textContent += `[${event.stream}] ${text}`;
+      toolCall.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function addTerminalInteraction(toolCalls, event) {
+      const toolCall = toolCalls.get(event.call_id);
+      if (!toolCall) return;
+      const interaction = document.createElement('div');
+      interaction.className = 'tool-call-output';
+      interaction.textContent = event.stdin
+        ? `终端输入 · Session ${event.process_id}：${JSON.stringify(event.stdin)}`
+        : `终端轮询 · Session ${event.process_id}`;
+      toolCall.body.append(interaction);
+    }
+
+    function completeToolCall(toolCalls, event) {
+      const toolCall = toolCalls.get(event.call_id);
+      if (!toolCall) return;
+      let parsedOutput;
+      try { parsedOutput = JSON.parse(event.output); } catch (_) {}
+      if (parsedOutput?.session_id) {
+        toolCall.status.textContent = `仍在运行 · Session ${parsedOutput.session_id}`;
+      } else {
+        toolCall.row.classList.add('completed');
+        toolCall.status.textContent = '已完成';
+      }
+      const output = document.createElement('div');
+      output.className = 'tool-call-output';
+      if (parsedOutput) {
+        const state = parsedOutput.session_id
+          ? `Session ID：${parsedOutput.session_id}`
+          : `退出码：${parsedOutput.exit_code}`;
+        const terminal = parsedOutput.tty ? ' · TTY' : '';
+        const policy = parsedOutput.policy_rule ? `\n策略：${parsedOutput.policy_rule}` : '';
+        const collection = parsedOutput.original_token_count !== undefined
+          ? `\n原始 Token 估算：${parsedOutput.original_token_count}${parsedOutput.output_omitted_bytes ? ` · 省略 ${parsedOutput.output_omitted_bytes} 字节` : ''}`
+          : '';
+        output.textContent = `${state}${terminal}${policy}${collection}${parsedOutput.output ? `\n输出：${parsedOutput.output}` : ''}`;
+      } else {
+        output.textContent = `输出：${event.output}`;
+      }
+      toolCall.body.append(output);
+    }
+
+    function addApproval(event, threadID) {
+      const card = document.createElement('div');
+      card.className = 'approval-card';
+      const title = document.createElement('h3');
+      title.textContent = '需要批准执行命令';
+      const reason = document.createElement('p');
+      reason.textContent = `${event.reason || '该命令不在自动允许策略中'} · ${event.cwd}`;
+      const command = document.createElement('pre');
+      command.textContent = event.command.join(' ');
+      const actions = document.createElement('div');
+      actions.className = 'approval-actions';
+      const approve = document.createElement('button');
+      approve.className = 'approve';
+      approve.type = 'button';
+      approve.textContent = '批准一次';
+      const deny = document.createElement('button');
+      deny.type = 'button';
+      deny.textContent = '拒绝';
+      const approveSession = document.createElement('button');
+      approveSession.type = 'button';
+      approveSession.textContent = '本会话批准';
+      const approveAlways = document.createElement('button');
+      approveAlways.type = 'button';
+      approveAlways.textContent = '始终允许';
+      const result = document.createElement('div');
+      result.className = 'approval-result';
+      const respond = async (decision) => {
+        approve.disabled = true;
+        deny.disabled = true;
+        approveSession.disabled = true;
+        approveAlways.disabled = true;
+        result.textContent = '正在提交决定…';
+        try {
+          const response = await fetch(`/api/approvals/${encodeURIComponent(event.call_id)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ turn_id: event.turn_id, thread_id: threadID, decision })
+          });
+          if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+          if (decision === 'approved') result.textContent = '已批准一次，命令继续执行';
+          else if (decision === 'approved_for_session') result.textContent = '已批准本会话规则，后续匹配命令将自动执行';
+          else if (decision === 'approved_with_amendment') result.textContent = '规则已保存到项目 tmp，重启后仍会自动执行';
+          else result.textContent = '已拒绝，结果将返回模型';
+        } catch (error) {
+          approve.disabled = false;
+          deny.disabled = false;
+          approveSession.disabled = false;
+          approveAlways.disabled = false;
+          result.textContent = `提交失败：${error.message}`;
+        }
+      };
+      approve.addEventListener('click', () => respond('approved'));
+      approveSession.addEventListener('click', () => respond('approved_for_session'));
+      approveAlways.addEventListener('click', () => respond('approved_with_amendment'));
+      deny.addEventListener('click', () => respond('denied'));
+      actions.append(approve);
+      if (event.proposed_prefix_rule?.length) {
+        const prefix = document.createElement('div');
+        prefix.className = 'approval-result';
+        prefix.textContent = `建议规则：[${event.proposed_prefix_rule.join(', ')}]`;
+        card.append(title, reason, command, prefix, actions, result);
+        actions.append(approveSession, approveAlways, deny);
+      } else {
+        actions.append(deny);
+        card.append(title, reason, command, actions, result);
+      }
+      messages.append(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function addElicitation(event, threadID) {
+      const card = document.createElement('div');
+      card.className = 'approval-card';
+      const title = document.createElement('h3');
+      title.textContent = `MCP 需要补充信息 · ${event.server || ''}`;
+      const reason = document.createElement('p');
+      reason.textContent = event.message || 'MCP Server 请求填写表单';
+      const fields = document.createElement('div');
+      fields.className = 'elicitation-fields';
+      const inputs = {};
+      (event.fields || []).forEach((field) => {
+        const label = document.createElement('label');
+        label.textContent = field.title || field.name;
+        const input = document.createElement('input');
+        input.type = field.type === 'number' || field.type === 'integer' ? 'number' : field.type === 'boolean' ? 'checkbox' : 'text';
+        input.placeholder = field.description || field.name;
+        inputs[field.name] = input;
+        label.append(input);
+        fields.append(label);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'approval-actions';
+      const accept = document.createElement('button');
+      accept.className = 'approve';
+      accept.type = 'button';
+      accept.textContent = '提交';
+      const decline = document.createElement('button');
+      decline.type = 'button';
+      decline.textContent = '拒绝';
+      const result = document.createElement('div');
+      result.className = 'approval-result';
+      const respond = async (action) => {
+        accept.disabled = true;
+        decline.disabled = true;
+        const content = {};
+        Object.entries(inputs).forEach(([name, input]) => {
+          content[name] = input.type === 'checkbox' ? input.checked : input.value;
+        });
+        result.textContent = '正在提交…';
+        try {
+          const response = await fetch(`/api/elicitations/${encodeURIComponent(event.elicitation_id)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thread_id: threadID, action, content })
+          });
+          if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+          result.textContent = action === 'accept' ? '已提交给 MCP Server' : '已拒绝 elicitation';
+        } catch (error) {
+          accept.disabled = false;
+          decline.disabled = false;
+          result.textContent = `提交失败：${error.message}`;
+        }
+      };
+      accept.addEventListener('click', () => respond('accept'));
+      decline.addEventListener('click', () => respond('decline'));
+      actions.append(accept, decline);
+      card.append(title, reason, fields, actions, result);
+      messages.append(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    async function submitPrompt(text) {
+      if ((!text && !pendingImages.length) || send.disabled) return;
+      const request = new AbortController();
+      const requestThreadID = activeThreadID;
+      const requestImages = pendingImages.slice();
+      activeRequest = request;
+      interrupting = false;
+      const userMessage = addMessage('user', text);
+      requestImages.forEach((imageURL) => {
+        const image = document.createElement('img');
+        image.src = imageURL;
+        image.alt = '已发送图片';
+        image.style.cssText = 'display:block;max-width:280px;max-height:240px;margin-top:8px;border-radius:10px;object-fit:contain';
+        userMessage.bubble.append(image);
+      });
+      let assistant;
+      let activity = addActivity();
+      let candidateText = '';
+      let sawTool = false;
+      const toolCalls = new Map();
+      prompt.value = '';
+      pendingImages = [];
+      renderImagePreviews();
+      prompt.style.height = '';
+      updateComposerAction();
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, thread_id: requestThreadID, image_urls: requestImages }),
+          signal: request.signal
+        });
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const handleStreamEvent = (event) => {
+          if (event.type === 'assistant_delta') {
+            candidateText += event.delta;
+            activity.content.textContent = candidateText;
+            activity.row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          } else if (event.type === 'tool_call_started') {
+            sawTool = true;
+            activity.row.classList.remove('running');
+            if (!candidateText.trim()) activity.content.textContent = `正在调用 ${event.name}`;
+            candidateText = '';
+            addToolCall(toolCalls, event);
+          } else if (event.type === 'tool_call_completed') {
+            completeToolCall(toolCalls, event);
+            activity = addActivity('正在整理结果…');
+          } else if (event.type === 'exec_command_output_delta') {
+            appendExecDelta(toolCalls, event);
+          } else if (event.type === 'terminal_interaction') {
+            addTerminalInteraction(toolCalls, event);
+          } else if (event.type === 'exec_approval_request') {
+            addApproval(event, requestThreadID);
+          } else if (event.type === 'mcp_elicitation_request') {
+            addElicitation(event, requestThreadID);
+          } else if (event.type === 'context_compaction') {
+            addActivity(`已压缩上下文 · 约 ${event.before_tokens} → ${event.after_tokens} Token`, false);
+          } else if (event.type === 'error') {
+            throw new Error(event.message);
+          }
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          lines.filter(Boolean).forEach((line) => handleStreamEvent(JSON.parse(line)));
+        }
+        buffer += decoder.decode();
+        if (buffer.trim()) handleStreamEvent(JSON.parse(buffer));
+        if (candidateText.trim()) {
+          activity.row.remove();
+          assistant = addMessage('assistant', candidateText);
+        } else if (!sawTool) {
+          activity.row.remove();
+        } else {
+          activity.row.classList.remove('running');
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        if (interrupting) return;
+        activity?.row.remove();
+        if (!assistant) assistant = addMessage('assistant');
+        assistant.row.classList.add('error');
+        assistant.bubble.textContent = error.message;
+      } finally {
+        if (activeRequest === request) {
+          activeRequest = undefined;
+          activeTurnID = '';
+          interrupting = false;
+          send.disabled = false;
+          updateComposerAction();
+        }
+        loadThreads().catch(() => {});
+        prompt.focus();
+      }
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const text = prompt.value.trim();
+      if (!activeRequest) {
+        submitPrompt(text);
+        return;
+      }
+      if (text || pendingImages.length) {
+        if (pendingImages.length) return;
+        fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/steer`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Turn-ID': activeTurnID }, body: JSON.stringify({ prompt: text })
+        }).then(async (response) => {
+          if (!response.ok) throw new Error(await response.text());
+          addMessage('user', text);
+          addActivity('已加入引导，将在当前步骤结束后继续执行', false);
+          prompt.value = '';
+          prompt.style.height = '';
+          updateComposerAction();
+        }).catch((error) => addActivity(`引导失败：${error.message}`, false));
+        return;
+      }
+      interrupting = true;
+      send.disabled = true;
+      fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/interrupt`, { method: 'POST' })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(await response.text());
+          addActivity('已中断', false);
+        })
+        .catch((error) => {
+          interrupting = false;
+          addActivity(`中断失败：${error.message}`, false);
+        })
+        .finally(() => { send.disabled = false; updateComposerAction(); });
+    });
+    document.querySelector('#attach-image').addEventListener('click', () => imagePicker.click());
+    imagePicker.addEventListener('change', () => {
+      readImageFiles(imagePicker.files);
+      imagePicker.value = '';
+    });
+    prompt.addEventListener('paste', (event) => {
+      const imageFiles = [...event.clipboardData.items]
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      if (imageFiles.length) {
+        event.preventDefault();
+        readImageFiles(imageFiles);
+      }
+    });
+
+    prompt.addEventListener('input', () => {
+      updateComposerAction();
+      prompt.style.height = 'auto';
+      prompt.style.height = `${Math.min(prompt.scrollHeight, 170)}px`;
+    });
+
+    prompt.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    bindPromptChips();
+    document.querySelectorAll('.mode-button').forEach((button) => {
+      button.addEventListener('click', () => setMode(button.dataset.mode));
+    });
+    document.querySelectorAll('.view-button').forEach((button) => {
+      button.addEventListener('click', () => setView(button.dataset.view));
+    });
+    document.querySelector('#home-brand').addEventListener('click', () => showHome());
+    document.querySelector('#extensions-button').addEventListener('click', showExtensions);
+    document.querySelector('#extensions-close').addEventListener('click', () => extensionsDialog.close());
+    document.querySelector('#extensions-refresh').addEventListener('click', async () => {
+      const refreshButton = document.querySelector('#extensions-refresh');
+      if (activeRequest) {
+        extensionsStatus.className = 'extensions-status error';
+        extensionsStatus.textContent = '当前任务仍在运行。请关闭窗口并停止任务，任务结束后再刷新。';
+        return;
+      }
+      refreshButton.disabled = true;
+      refreshButton.textContent = '正在扫描并连接…';
+      extensionsStatus.className = 'extensions-status';
+      extensionsStatus.textContent = '正在扫描 LOB Codex 应用扩展…';
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(activeThreadID)}/extensions/refresh`, { method: 'POST' });
+        if (!response.ok) throw new Error(await response.text());
+        const inventory = await loadExtensions();
+        extensionsStatus.className = 'extensions-status success';
+        extensionsStatus.textContent = `刷新完成 · 扩展来源：${inventory.extension_root} · 工具工作区：${inventory.workspace_root}`;
+      } catch (error) {
+        extensionsStatus.className = 'extensions-status error';
+        extensionsStatus.textContent = `刷新失败：${error.message}`;
+      } finally {
+        refreshButton.disabled = false;
+        refreshButton.textContent = '重新扫描并连接';
+      }
+    });
+    document.querySelector('#new-thread').addEventListener('click', createThread);
+    document.querySelector('#new-conversation').addEventListener('click', newConversation);
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.workspace-menu').forEach((menu) => menu.classList.add('is-hidden'));
+    });
+    document.querySelector('#workspace-browse').addEventListener('click', browseWorkspace);
+    document.querySelector('#workspace-cancel').addEventListener('click', () => workspaceDialog.close());
+    workspaceForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      submitThread(workspaceInput.value.trim());
+    });
+    document.querySelectorAll('.concept').forEach((button) => {
+      button.addEventListener('click', () => showHome(button.dataset.topic));
+    });
+
+    const qrDialog = document.querySelector('#qr-dialog');
+    const qrTitle = document.querySelector('#qr-dialog-title');
+    const qrDescription = document.querySelector('#qr-dialog-description');
+    const qrImage = document.querySelector('#qr-dialog-image');
+    const qrProfiles = {
+      wechat: { title: '微信公众号 · 虾哥不加班', description: '微信扫码关注，持续更新 Agent Harness 源码拆解。', image: '/wechat-official-qr.jpg' },
+      douyin: { title: '抖音 · 虾哥不加班', description: '抖音扫码关注，抖音号：lob.ai', image: '/douyin-qr-cropped.png' }
+    };
+
+    document.querySelectorAll('[data-qr]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const profile = qrProfiles[button.dataset.qr];
+        qrTitle.textContent = profile.title;
+        qrDescription.textContent = profile.description;
+        qrImage.src = profile.image;
+        qrImage.alt = `${profile.title}二维码`;
+        qrDialog.showModal();
+      });
+    });
+    document.querySelector('#qr-dialog-close').addEventListener('click', () => qrDialog.close());
+    qrDialog.addEventListener('click', (event) => {
+      if (event.target === qrDialog) qrDialog.close();
+    });
+    setMode('work');
+    loadThreads().catch((error) => { workspacePath.textContent = `工作区加载失败：${error.message}`; });
+  </script>
+</body>
+</html>

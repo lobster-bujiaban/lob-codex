@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs><style>
+    .title{font:700 36px system-ui;fill:#f8fafc}.sub{font:18px system-ui;fill:#9fb2cc}.head{font:700 20px system-ui;fill:#f8fafc}.text{font:16px system-ui;fill:#c8d5e8}.mono{font:700 15px ui-monospace;fill:#f8fafc}
+  </style></defs>
+  <rect width="1400" height="900" fill="#0b223f"/>
+  <circle cx="1310" cy="60" r="170" fill="#f9733d" opacity=".08"/><circle cx="30" cy="850" r="250" fill="#38bdf8" opacity=".06"/>
+  <text x="70" y="72" class="title">Persistent ExecPolicy Amendment</text>
+  <text x="70" y="105" class="sub">规则与后续运行数据统一存放到项目 tmp/，不进入 Git</text>
+  <g transform="translate(70 155)"><rect width="360" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">1. Approval request</text>
+    <rect x="24" y="82" width="312" height="150" rx="18" fill="#20466f" stroke="#38bdf8"/><text x="44" y="120" class="head">Proposed amendment</text><text x="44" y="160" class="mono">[&quot;go&quot;, &quot;test&quot;]</text><text x="44" y="197" class="text">结构化 argv token 前缀</text>
+    <rect x="24" y="272" width="312" height="160" rx="18" fill="#20466f" stroke="#f9733d"/><text x="44" y="312" class="head">用户选择“始终允许”</text><text x="44" y="352" class="mono">approved_with_amendment</text><text x="44" y="390" class="text">当前命令继续执行</text>
+  </g>
+  <path d="M430 405H490" stroke="#f9733d" stroke-width="5"/><path d="M490 405l-25-15v30z" fill="#f9733d"/>
+  <g transform="translate(500 155)"><rect width="400" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">2. Atomic persistence</text>
+    <rect x="24" y="82" width="352" height="150" rx="18" fill="#20466f" stroke="#2dd4bf"/><text x="44" y="120" class="head">Workspace data root</text><text x="44" y="160" class="mono">tmp/exec-policy.rules</text><text x="44" y="197" class="text">tmp/ 已加入 .gitignore</text>
+    <rect x="24" y="272" width="352" height="160" rx="18" fill="#20466f" stroke="#a78bfa"/><text x="44" y="312" class="head">Safe replacement</text><text x="44" y="352" class="mono">encode → .tmp → rename</text><text x="44" y="390" class="text">0600 文件权限 · 去重规则</text>
+  </g>
+  <path d="M900 405H960" stroke="#f9733d" stroke-width="5"/><path d="M960 405l-25-15v30z" fill="#f9733d"/>
+  <g transform="translate(970 155)"><rect width="360" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">3. Next Session</text>
+    <rect x="24" y="82" width="312" height="150" rx="18" fill="#20466f" stroke="#38bdf8"/><text x="44" y="120" class="head">Startup load</text><text x="44" y="160" class="mono">NewExecPolicy(workspace)</text><text x="44" y="197" class="text">读取并校验持久化规则</text>
+    <rect x="24" y="272" width="312" height="160" rx="18" fill="#20466f" stroke="#f9733d"/><text x="44" y="312" class="head">Token prefix match</text><text x="44" y="352" class="mono">persistent prefix</text><text x="44" y="390" class="text">跳过审批，进入 Sandbox</text>
+  </g>
+  <g transform="translate(70 720)"><rect width="1260" height="120" rx="22" fill="#fff8ee"/><text x="28" y="42" style="font:700 18px system-ui;fill:#173457">核心边界</text><text x="28" y="78" style="font:16px system-ui;fill:#34516f">Session rule 只在内存；amendment 写入项目 tmp。两者都按 argv token 匹配，不缓存复合 Shell 字符串。</text></g>
+</svg>

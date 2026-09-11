@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs><style>.title{font:700 36px system-ui;fill:#f8fafc}.sub{font:18px system-ui;fill:#9fb2cc}.head{font:700 20px system-ui;fill:#f8fafc}.text{font:16px system-ui;fill:#c8d5e8}.mono{font:700 15px ui-monospace;fill:#f8fafc}</style></defs>
+  <rect width="1400" height="900" fill="#0b223f"/><circle cx="1320" cy="50" r="180" fill="#f9733d" opacity=".08"/><circle cx="20" cy="860" r="250" fill="#38bdf8" opacity=".06"/>
+  <text x="70" y="72" class="title">UnifiedExec Head-Tail Output Collection</text><text x="70" y="105" class="sub">大输出稳定保留开头和结尾，中间省略并携带完整收集元数据</text>
+  <g transform="translate(70 155)"><rect width="360" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">1. Streaming transcript</text>
+    <rect x="24" y="82" width="312" height="150" rx="18" fill="#20466f" stroke="#38bdf8"/><text x="44" y="120" class="head">1 MiB hard cap</text><text x="44" y="160" class="mono">Head 50% + Tail 50%</text><text x="44" y="197" class="text">持续丢弃中间旧字节</text>
+    <rect x="24" y="272" width="312" height="160" rx="18" fill="#20466f" stroke="#f9733d"/><text x="44" y="312" class="head">Bounded Delta events</text><text x="44" y="352" class="mono">8192 bytes × 10000</text><text x="44" y="390" class="text">缓冲继续收集，事件停止洪泛</text></g>
+  <path d="M430 405H490" stroke="#f9733d" stroke-width="5"/><path d="M490 405l-25-15v30z" fill="#f9733d"/>
+  <g transform="translate(500 155)"><rect width="400" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">2. Per-call collection</text>
+    <rect x="24" y="82" width="352" height="150" rx="18" fill="#20466f" stroke="#2dd4bf"/><text x="44" y="120" class="head">Drain transcript</text><text x="44" y="160" class="mono">exec / write_stdin</text><text x="44" y="197" class="text">只消费本轮新增输出</text>
+    <rect x="24" y="272" width="352" height="160" rx="18" fill="#20466f" stroke="#a78bfa"/><text x="44" y="312" class="head">Model-visible budget</text><text x="44" y="352" class="mono">max_output_tokens × 4</text><text x="44" y="390" class="text">再次按 head-tail 压缩</text></g>
+  <path d="M900 405H960" stroke="#f9733d" stroke-width="5"/><path d="M960 405l-25-15v30z" fill="#f9733d"/>
+  <g transform="translate(970 155)"><rect width="360" height="510" rx="26" fill="#16375e" stroke="#315d8f"/><text x="26" y="48" class="head">3. Structured result</text>
+    <rect x="24" y="82" width="312" height="150" rx="18" fill="#20466f" stroke="#38bdf8"/><text x="44" y="120" class="head">Omission marker</text><text x="44" y="160" class="mono">... N bytes omitted ...</text><text x="44" y="197" class="text">插入保留的 head 与 tail 之间</text>
+    <rect x="24" y="272" width="312" height="160" rx="18" fill="#20466f" stroke="#f9733d"/><text x="44" y="312" class="head">Collection metadata</text><text x="44" y="352" class="mono">original_token_count</text><text x="44" y="380" class="mono">output_omitted_bytes</text><text x="44" y="410" class="text">原始规模保持可观测</text></g>
+  <g transform="translate(70 720)"><rect width="1260" height="120" rx="22" fill="#fff8ee"/><text x="28" y="42" style="font:700 18px system-ui;fill:#173457">核心思想</text><text x="28" y="78" style="font:16px system-ui;fill:#34516f">只截断尾部会丢失进程结论；head-tail 同时保留启动上下文与最终结果，内存和事件量仍有硬上限。</text></g>
+</svg>
